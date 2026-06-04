@@ -25,5 +25,11 @@ why: 1A over landing in a closed focus — the close's only act (the done-move) 
 next: focus 02 done-when 1–3 met — candidate for `orca done 02-resume-tail-edges`. Genuinely-unexercised path still open from focus 01: a real cross-session resume run to tune ORCA_LIVE_WINDOW (45s liveness window). Parked non-MUST from 01 also remain (done-when nudge, "not started" ark section, roadmap view).
 head: 11/11 suites + bench green. Only the liveness window is unproven in the wild; prune + dangling handling are deterministic + (prune) tested. Watch: prune uses the `started` field, not transcript mtime — a record whose transcript was deleted still ages out correctly.
 
+### 2026-06-04 — third rough edge: decide routing
+done: `orca decide --focus <slug>` now targets a focus explicitly; with several in-work focuses the no-target ambiguous fallback still records to project-level `.orca/decisions.md` (never drop the why) but WARNS loudly, names the in-work slugs, and shows the `--focus` form; unknown slug errors and writes nothing. +4 test_decide checks, 11/11 suites green. [commit:e579401] [file:bin/orca:1037] [test:bash tests/test_decide.sh]
+why: Surfaced live this session — the dashboard decision landed in the root ledger because two focuses were in-work, and the old fallback did it SILENTLY. Kept the fallback (ambiguity must not lose a decision) but made it loud + added precise targeting, rather than erroring out (which could drop the why). Homed here in 02 because it's the same class as prune/dangling: closing orca's rough edges, not dashboard work.
+next: focus 02 now has three closed edges; still a `orca done 02-resume-tail-edges` candidate. Unchanged open items: live cross-session resume to tune ORCA_LIVE_WINDOW; parked non-MUST from 01.
+head: dogfooded the fix immediately — this very decision was recorded with `orca decide --focus 02-resume-tail-edges`, landing correctly with no warning. Watch: `--focus` matches in-work slugs only (done focuses excluded), which is the intended scope.
+
 ## Log
 <!-- ark state transitions, append-only -->
