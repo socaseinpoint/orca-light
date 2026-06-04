@@ -551,25 +551,11 @@ def cmd_init(args):
 
 def latest_session(text):
     """Fields of the freshest `### ` block under `## sessions` (schema v2), else {}.
-    Newest block is first; we read only it. Returns dict of done/why/next/head."""
-    in_sessions, started, block = False, False, {}
-    for raw in text.splitlines():
-        m = HEADING_RE.match(raw)
-        if m and len(m.group(1)) <= 2:
-            in_sessions = bool(SESSIONS_HEADING_RE.match(raw))
-            continue
-        if not in_sessions:
-            continue
-        if m:  # ### date subheading
-            if started:
-                break  # only the freshest block
-            started = True
-            continue
-        if started:
-            fm = re.match(r"^\s*(done|why|next|head):\s*(.+)$", raw, re.IGNORECASE)
-            if fm:
-                block[fm.group(1).lower()] = fm.group(2).strip()
-    return block
+    Blocks are appended at the BOTTOM (newest last), so the freshest is the LAST
+    block in file order. Single source of truth: all_sessions parses every block
+    chronologically; we take the tail. Returns dict of date/done/why/next/head."""
+    blocks = all_sessions(text)
+    return blocks[-1] if blocks else {}
 
 
 def _all_open_arks(home, cwd_root):
@@ -737,8 +723,9 @@ def cmd_now(args):
 
 
 def all_sessions(text):
-    """Every `### ` block under `## sessions`, newest first: date + done/why/next/head.
-    Multiple done: lines in a block are joined. This is the raw activity log."""
+    """Every `### ` block under `## sessions`, in file order. Blocks are appended at
+    the bottom (newest last), so this is chronological oldest->newest: date +
+    done/why/next/head. Multiple done: lines in a block are joined. Raw activity log."""
     blocks, cur, in_sessions = [], None, False
     for raw in text.splitlines():
         m = HEADING_RE.match(raw)
@@ -779,7 +766,7 @@ def cmd_trail(args):
     with open(path, "r", errors="replace") as fh:
         text = fh.read()
     fields = parse_fields(text)
-    blocks = list(reversed(all_sessions(text)))  # all_sessions is newest-first; flip to chrono
+    blocks = all_sessions(text)  # already chronological (file order = newest-last convention)
 
     print(_c(DIM, "trail: %s" % args.slug)
           + ("  " + _c(DIM, "done-when: " + fields["done-when"]) if fields.get("done-when") else ""))

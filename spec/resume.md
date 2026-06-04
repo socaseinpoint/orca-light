@@ -62,16 +62,18 @@ updated: <YYYY-MM-DD>
 - <why>, not what. Append-only. (written by `orca decide`)
 
 ## sessions
+### <YYYY-MM-DD>   ← older block (came first)
+done: ...
 ### <YYYY-MM-DD>
 done: <claim>. [commit:a1b2c3d] [test:bash tests/run.sh]
 why:  <rationale for the calls made this session>
 next: <the next step you were about to take>
 head: <what you were thinking / stuck on / hypotheses in flight>
-### <YYYY-MM-DD>   ← older block, newest first
-done: ...
 ```
 
-- Newest block first.
+- Blocks are appended at the BOTTOM — newest LAST. The file reads top-to-bottom as
+  the work happened (chronological). `orca now` reads the last block; `orca trail`
+  prints them in file order.
 - `done:` MUST carry ≥1 anchor (it is the proven zone). `why/next/head` are free text.
 - A block may omit `why/next/head` if trivial; it may not omit a `done:` anchor when work was committed.
 

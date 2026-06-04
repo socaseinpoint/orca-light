@@ -140,9 +140,10 @@ write files — **you** do.
 
 ## Step 3 / append + verify (the only write)
 
-For **continue**: insert the returned block at the TOP of the ark's `## sessions`
-section (newest-first ordering — `orca now`/`trail` depend on it). Append, never
-reorder existing blocks. Then prove it:
+For **continue**: append the returned block at the BOTTOM of the ark's `## sessions`
+section (newest LAST — `orca now` reads the last block, `orca trail` reads file
+order; both depend on this). Append, never reorder or rewrite existing blocks. Then
+prove it:
 
 ```bash
 orca verify .orca/arks/<slug>.md            # checks the done: anchors against reality
