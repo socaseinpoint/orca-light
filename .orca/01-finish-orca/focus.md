@@ -67,6 +67,12 @@ why: One rewrite beat incremental edits — the topology change (threads+registr
 next: Done-when 1–4 are met → finish this focus's first deliverables. Remaining: a docs-refresh ark (README/GUIDE/PRINCIPLES/spec still describe the old model). Then the focus itself can go to `.orca/done/`.
 head: This block was written by the same model it describes — `orca verify .orca/01-finish-orca/focus.md` should pass on it (latest-block rule means the older "recovered" block's now-stale `.orca/decisions.md` anchor no longer fails verify). Watch the latest-block verify rule as the Trail grows.
 
+### 2026-06-04 — docs refreshed, focus has no open threads
+done: Refreshed all six docs to the focus-dir model (ark 02-docs-refresh, done) and dogfooded the full close loop — both arks finished via `orca done`, Log lines written, focus Now + arks updated. [commit:558b158] [commit:1bebfeb] [test:bash bench/run.sh]
+why: Closing the loop in-session proves the new commands work end to end, not just the unit tests: `orca done` moved both arks to arks/done/ and appended Log lines; `orca verify` passed on each ark's latest block against real commits + the bench. The four prose docs went to parallel subagents under one model brief to stay consistent; PRINCIPLES + bench were hand-done (timeless principles, real fixtures).
+next: focus 01-finish-orca has met done-when 1–4 with tooling + docs current — it is a candidate for `orca done 01-finish-orca`. Left in-work pending the user's call on whether orca is "finished" for now. Parked candidate: an external cross-project overview that scans many repos' `.orca/` dirs (orca core stays project-local).
+head: full suite 10/10 + bench (B2 6/6, B4 6/6, B5 3/3) green on the new model. The latest-block verify rule is the one behavior to watch as Trails accumulate across sessions; commit anchors are the durable choice.
+
 ## Log
 <!-- ark state transitions, append-only -->
 2026-06-04  01-collapse-binary  → in-work  (first ark of the finish-orca focus)
