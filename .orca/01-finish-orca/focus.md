@@ -11,9 +11,9 @@ updated: 2026-06-04
 3. archiving an ark appends to the focus `## Журнал` — continuation visible, never a void.
 4. orca's command surface has ZERO cross-project concept (no `now --all` / registry / `ark-root`).
 
-## Сейчас
-Model fully designed and LOCKED this session — 7 decisions in `../decisions.md` (the
-last is the two-states-via-folders correction). The model:
+## Now
+Model fully designed and LOCKED this session — decisions in `./decisions.md` (the
+last design call is the two-states-via-folders correction). The model:
 
 - **domain** = a folder that holds the orca store (no goal, just a container).
 - **focus** = the atom of orca — a self-contained numbered dir (`NN-name/`: this
@@ -34,7 +34,7 @@ focus-scoped).
 ## arks
 - `arks/01-collapse-binary.md` — in-work — collapse the binary + skill to git-form.
 
-## След
+## Trail
 <!-- handoff trail, append-only, newest LAST -->
 
 ### 2026-06-04 — the focus layer, recovered
@@ -61,6 +61,6 @@ head: Tooling still runs the OLD model, so until the first ark lands, `orca now`
   file (anchor types are format-agnostic). Cross-project overview, when ever wanted, is an
   external add-on that scans `.orca/` files — orca core must never learn about it.
 
-## Журнал
+## Log
 <!-- ark state transitions, append-only -->
 2026-06-04  01-collapse-binary  → in-work  (first ark of the finish-orca focus)

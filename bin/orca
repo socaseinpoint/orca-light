@@ -2,28 +2,48 @@
 """orca — lightweight session continuity for Claude Code.
 
 Files are state. Views are derived on read. One writer per file. No locks,
-no lifecycle flips, no scheduler, no shared mutable state.
+no lifecycle flips, no scheduler, no shared mutable state, no global state.
+
+orca lives entirely in `<project>/.orca/`, like `.git/`. The binary is global
+(one symlink on PATH); the STATE is project-local. There is no cross-project
+concept in the core — no registry, no `~/.orca`, no "resolve from anywhere".
+A cross-project overview, if ever wanted, is an external add-on that scans
+`.orca/` files; orca core never learns about it.
+
+Topology (all views derived on read, nothing derived is stored):
+
+  <project>/.orca/
+    <NN-name>/            an in-work FOCUS — the atom of orca, a self-contained
+      focus.md             campaign: intent + done-when + Now + arks + Trail + Log
+      decisions.md         focus-scoped why-ledger (append-only)
+      arks/
+        <slug>.md          an in-work ARK — a deliverable under the focus
+        done/<slug>.md     a done ark (location is the terminal truth)
+    done/
+      <NN-name>/           a done focus (the whole dir moved here)
+
+Two states, expressed by FOLDER LOCATION, never a `state:` flip:
+  in-work focus  .orca/<name>/        done focus  .orca/done/<name>/
+  in-work ark    <focus>/arks/<slug>  done ark    <focus>/arks/done/<slug>
 
 The trust foundation is `orca verify`: a handoff is not faith-based prose, it
-is claims + checkable anchors. If an anchor is fake, verify fails. Confabulated
-continuity gets caught here instead of silently poisoning the next session.
+is claims + checkable anchors. Anchors live on `done:` lines under `## Trail`.
+If an anchor is fake, verify fails. Confabulated continuity gets caught here
+instead of silently poisoning the next session.
 
-Anchors (inline in handoff bullets):
+Anchors (inline on `done:` lines):
   [file:PATH:LINE]   -> PATH exists and has >= LINE lines
   [commit:HASH]      -> HASH resolves to a commit in this repo
   [test:COMMAND]     -> COMMAND re-runs with exit 0 (skipped with --no-tests)
 
 Usage:
-  orca init                            scaffold meta-tier ~/.orca + project .orca
-  orca verify [ARKFILE] [--no-tests]   check a handoff's anchors against reality
-  orca now                             resume: goal + open arks + where you stopped + blockers
-  orca gate                            warn (exit 1) if the freshest active ark's handoff isn't verified
-  orca decide "<what> — <why>"         append a decision to .orca/decisions.md (the WHY layer)
-
-Topology (all views derived on read, nothing derived is stored):
-  ~/.orca/threads/<thread>.md   cross-project intent + goal (one writer)
-  <project>/.orca/arks/<slug>.md   a thread of work: intent, done-when, handoff
-Override the meta home with ORCA_HOME (used by tests).
+  orca init                      scaffold project .orca/
+  orca now                       resume: every in-work focus + open arks + where you stopped
+  orca verify [FILE] [--no-tests]  check a handoff's Trail anchors against reality
+  orca decide "<what> — <why>"   append a decision to the focus's decisions.md
+  orca trail <slug>              one focus's (or ark's) Trail, oldest->newest
+  orca done <slug>               finish an ark (-> arks/done/ + Log line) or a focus (-> .orca/done/)
+  orca gate                      warn (exit 1) if the freshest focus's latest Trail block isn't verified
 """
 import argparse
 import glob
@@ -34,11 +54,11 @@ import sys
 import time
 
 ANCHOR_RE = re.compile(r"\[(file|commit|test):([^\]]+)\]")
-HANDOFF_HEADING_RE = re.compile(r"^#{1,6}\s+handoff\b", re.IGNORECASE)
-SESSIONS_HEADING_RE = re.compile(r"^#{1,6}\s+sessions\b", re.IGNORECASE)
+TRAIL_HEADING_RE = re.compile(r"^#{1,6}\s+(trail|sessions|handoff)\b", re.IGNORECASE)
 HEADING_RE = re.compile(r"^(#{1,6})\s")
 BULLET_RE = re.compile(r"^\s*[-*]\s+\S")
-DONE_RE = re.compile(r"^\s*done:\s*\S", re.IGNORECASE)  # proven-zone field (schema v2)
+DONE_RE = re.compile(r"^\s*done:\s*\S", re.IGNORECASE)
+DONE_CLAIM_RE = re.compile(r"^\s*done:\s*(.+)$", re.IGNORECASE)
 
 GREEN, RED, YELLOW, DIM, RESET = "\033[32m", "\033[31m", "\033[33m", "\033[2m", "\033[0m"
 
@@ -67,21 +87,7 @@ def find_repo_root(start):
         return os.path.abspath(start)
 
 
-def default_arkfile(root):
-    arks = os.path.join(root, ".orca", "arks")
-    if not os.path.isdir(arks):
-        return None
-    cands = [
-        os.path.join(arks, f)
-        for f in os.listdir(arks)
-        if f.endswith(".md")
-    ]
-    if not cands:
-        return None
-    # freshest by mtime; views are derived, so no stored "active" flag
-    cands.sort(key=os.path.getmtime, reverse=True)
-    return cands[0]
-
+# --- anchor checks: orca's deterministic core (evidence is reality, not prose) ---
 
 def check_file(payload, root):
     if ":" not in payload:
@@ -133,17 +139,13 @@ def check_test(payload, root, timeout):
 
 # --- claim<->evidence judging: pluggable, OFF by default; deterministic core stays ---
 
-DONE_CLAIM_RE = re.compile(r"^\s*done:\s*(.+)$", re.IGNORECASE)
-
-
 def _truncate(s, n):
     s = s or ""
     return s if len(s) <= n else s[:n] + "\n…[truncated]"
 
 
 def evidence_for(kind, payload, root, timeout):
-    """A receipt: the real artifact behind an anchor, rendered as text a judge reads.
-    This is orca's strong, deterministic half — the evidence is reality, not prose."""
+    """A receipt: the real artifact behind an anchor, rendered as text a judge reads."""
     if kind == "commit":
         out = subprocess.run(["git", "show", "--stat", "-p", payload.strip()],
                              cwd=root, capture_output=True, text=True)
@@ -173,32 +175,29 @@ def evidence_for(kind, payload, root, timeout):
 
 
 def iter_done_claims(text):
-    """Each provable claim + its anchors: v2 `done:` lines and v1 `## handoff` bullets.
+    """Each provable claim + its anchors: `done:` lines in the Trail zone.
     The orient zone (why/next/head) is intent — never judged."""
-    claims, zone = [], None
+    claims, in_zone = [], False
     for raw in text.splitlines():
         m = HEADING_RE.match(raw)
         if m and len(m.group(1)) <= 2:
-            zone = ("handoff" if HANDOFF_HEADING_RE.match(raw)
-                    else "sessions" if SESSIONS_HEADING_RE.match(raw) else None)
+            in_zone = bool(TRAIL_HEADING_RE.match(raw))
             continue
         if m:
             continue
         anchors = ANCHOR_RE.findall(raw)
-        if not anchors:
+        if not anchors or not in_zone:
             continue
-        if zone == "sessions":
-            dm = DONE_CLAIM_RE.match(raw)
-            if dm:
-                claims.append((dm.group(1).strip(), anchors))
-        elif zone == "handoff" and BULLET_RE.match(raw):
+        dm = DONE_CLAIM_RE.match(raw)
+        if dm:
+            claims.append((dm.group(1).strip(), anchors))
+        elif BULLET_RE.match(raw):  # legacy handoff bullets
             claims.append((raw.strip().lstrip("-* ").strip(), anchors))
     return claims
 
 
 def judge_claim(claim, evidence, timeout):
     """Ask a SEPARATE cheap model whether the evidence substantiates the claim.
-    The handoff's writer must not grade itself — fresh model, skeptical by default.
     Pluggable via ORCA_JUDGE_CMD (default: Claude Haiku). Unavailable judge =
     skipped (grounded), so the deterministic core never depends on it."""
     cmd = os.environ.get("ORCA_JUDGE_CMD", "claude -p --model claude-haiku-4-5")
@@ -237,59 +236,44 @@ def judge_pass(text, root, timeout):
 
 
 def proven_lines(text):
-    """Lines in the proven zone — `done:` (v2) and `## handoff` bullets (v1). Anchors
-    are checked ONLY here. Prose in why/next/head/decisions may quote `[test:...]`
-    freely without verify trying to run it (a battle test surfaced this)."""
-    out, zone = [], None
+    """Lines in the proven zone — `done:` lines (and legacy handoff bullets) under
+    `## Trail`. Anchors are checked ONLY here. Prose in Now/why/next/head/decisions
+    may quote `[test:...]` freely without verify trying to run it."""
+    out, in_zone = [], False
     for raw in text.splitlines():
         m = HEADING_RE.match(raw)
         if m and len(m.group(1)) <= 2:
-            zone = ("handoff" if HANDOFF_HEADING_RE.match(raw)
-                    else "sessions" if SESSIONS_HEADING_RE.match(raw) else None)
+            in_zone = bool(TRAIL_HEADING_RE.match(raw))
             continue
         if m:
             continue
-        if zone == "sessions" and DONE_RE.match(raw):
-            out.append(raw)
-        elif zone == "handoff" and BULLET_RE.match(raw):
+        if in_zone and (DONE_RE.match(raw) or BULLET_RE.match(raw)):
             out.append(raw)
     return "\n".join(out)
 
 
 def bare_claims(text):
-    """Unproven claims in the *proven* zone. Two schemas, one rule — a claim that
-    asserts work is done must carry an anchor:
-      v1  `## handoff`  -> every bullet needs an anchor
-      v2  `## sessions` -> every `done:` line needs an anchor; `why:/next:/head:`
-                           are the orient zone (narrative) and are never flagged.
-    A `###` date subheading inside `## sessions` does not close the zone; only a
-    new top-level (`#`/`##`) heading does."""
-    flagged = []
-    zone = None  # "handoff" | "sessions" | None
+    """Unproven claims in the proven zone: a `done:` line (or legacy bullet) under
+    `## Trail` that carries no anchor. why/next/head are the orient zone and are
+    never flagged. A `###` date subheading does not close the zone; only a new
+    top-level heading does."""
+    flagged, in_zone = [], False
     for raw in text.splitlines():
         m = HEADING_RE.match(raw)
-        if m and len(m.group(1)) <= 2:  # top-level section heading -> may switch zone
-            if HANDOFF_HEADING_RE.match(raw):
-                zone = "handoff"
-            elif SESSIONS_HEADING_RE.match(raw):
-                zone = "sessions"
-            else:
-                zone = None
+        if m and len(m.group(1)) <= 2:
+            in_zone = bool(TRAIL_HEADING_RE.match(raw))
             continue
-        if m:  # deeper heading (### session date) -> keep current zone
+        if m:
             continue
         if ANCHOR_RE.search(raw):
             continue
-        if zone == "handoff" and BULLET_RE.match(raw):
-            flagged.append(raw.strip())
-        elif zone == "sessions" and DONE_RE.match(raw):
+        if in_zone and (DONE_RE.match(raw) or BULLET_RE.match(raw)):
             flagged.append(raw.strip())
     return flagged
 
 
 def check_anchors(text, root, no_tests, timeout):
-    """Core check. Returns (ok, lines, n_anchors). Pure — no printing.
-    lines are (status, message) tuples where status in OK/FAIL/SKIP/BARE/NONE."""
+    """Core check. Returns (ok, lines, n_anchors). Pure — no printing."""
     anchors = ANCHOR_RE.findall(proven_lines(text))
     lines, ok = [], True
     if not anchors:
@@ -317,64 +301,9 @@ _TAG = {"OK": (GREEN, " OK "), "FAIL": (RED, "FAIL"), "SKIP": (YELLOW, "SKIP"),
         "GROUND": (GREEN, "GRND"), "UNGROUND": (RED, "UNGR")}
 
 
-def cmd_verify(args):
-    root = find_repo_root(os.getcwd())
-    path = args.arkfile or default_arkfile(root)
-    if not path:
-        print(_c(RED, "verify: no ark file given and none under .orca/arks/"))
-        return 2
-    if not os.path.isfile(path):
-        print(_c(RED, "verify: not a file: %s" % path))
-        return 2
-
-    with open(path, "r", errors="replace") as fh:
-        text = fh.read()
-
-    print(_c(DIM, "ark: %s  (root: %s)" % (os.path.relpath(path, root), root)))
-    ok, lines, _ = check_anchors(text, root, args.no_tests, args.timeout)
-    if getattr(args, "judge", False):
-        j_ok, j_lines = judge_pass(text, root, args.timeout)
-        lines = lines + j_lines
-        ok = ok and j_ok
-    for status, msg in lines:
-        color, tag = _TAG[status]
-        if status == "NONE":
-            print(_c(YELLOW, msg))
-        else:
-            print("  %s %s" % (_c(color, tag), _c(DIM, msg)))
-    print(_c(GREEN, "verify: PASS") if ok else _c(RED, "verify: FAIL"))
-    return 0 if ok else 1
-
-
-def cmd_gate(args):
-    """Is the freshest active ark safe to end a session on? exit 0 = yes (or
-    nothing active). exit 1 + reason = its handoff is unproven. Non-blocking by
-    nature — Stop fires every turn and a hard exit (Ctrl-C) bypasses hooks, so a
-    blocking gate would nag yet still miss kills. This just makes a broken or
-    fabricated handoff *visible*; freshness is kept by flushing as you work, not
-    by a gate. Run it by hand any time, or let the Stop hook warn with it."""
-    root = find_repo_root(os.getcwd())
-    open_arks = [a for a in iter_arks(root) if is_open(a)]
-    if not open_arks:
-        return 0  # nothing active — nothing to hand off
-    ark = open_arks[0]  # freshest active
-    ok, lines, n = check_anchors(ark["text"], root, no_tests=True, timeout=args.timeout)
-    if ok and n > 0:
-        return 0
-    why = "; ".join("%s %s" % (s, m) for s, m in lines if s in ("FAIL", "BARE", "NONE")) \
-          or "no checkable anchors"
-    print("handoff for '%s' is not verified: %s" % (ark["slug"], why))
-    return 1
-
-
-# --- topology: meta-tier ~/.orca + project .orca, all derivation on read ---
+# --- topology: project-local focuses + arks, all derivation on read ---
 
 FIELD_RE = re.compile(r"([A-Za-z][\w-]*):\s*(.*)$")
-
-
-def meta_home():
-    """Cross-project meta-tier. ORCA_HOME override keeps tests off real ~/.orca."""
-    return os.environ.get("ORCA_HOME") or os.path.join(os.path.expanduser("~"), ".orca")
 
 
 def parse_fields(text):
@@ -409,325 +338,99 @@ def section_bullets(text, name):
     return out
 
 
-def _load_docs(directory):
-    docs = []
-    for f in sorted(glob.glob(os.path.join(directory, "*.md"))):
-        with open(f, "r", errors="replace") as fh:
-            text = fh.read()
-        docs.append({
-            "slug": os.path.splitext(os.path.basename(f))[0],
-            "path": f, "text": text, "fields": parse_fields(text),
-            "mtime": os.path.getmtime(f),
-        })
-    docs.sort(key=lambda d: d["mtime"], reverse=True)  # freshest first
-    return docs
+def section_text(text, name):
+    """Raw body lines under `## <name>` (until the next top-level heading), stripped
+    of leading HTML comments and blank padding. Used to surface a focus's `## Now`."""
+    out, in_sec = [], False
+    head = re.compile(r"^#{1,6}\s+" + re.escape(name) + r"\b", re.IGNORECASE)
+    for raw in text.splitlines():
+        m = HEADING_RE.match(raw)
+        if m:
+            in_sec = bool(head.match(raw))
+            continue
+        if in_sec:
+            out.append(raw)
+    while out and not out[0].strip():
+        out.pop(0)
+    while out and not out[-1].strip():
+        out.pop()
+    return [l for l in out if not l.strip().startswith("<!--")]
 
 
-def iter_arks(project_root):
-    # _load_docs globs arks/*.md (flat, non-recursive) — archived arks live one
-    # level down in arks/archive/, so they fall out of every live view for free.
-    return _load_docs(os.path.join(project_root, ".orca", "arks"))
+def _load_doc(path):
+    with open(path, "r", errors="replace") as fh:
+        text = fh.read()
+    return {
+        "slug": os.path.splitext(os.path.basename(path))[0],
+        "path": path, "text": text, "fields": parse_fields(text),
+        "mtime": os.path.getmtime(path),
+    }
 
 
-def find_ark_path(root, slug):
-    """Resolve <slug> to its ark file, live OR archived. Location is the terminal
-    'done' truth: a live ark sits at arks/<slug>.md, an archived one at
-    arks/archive/<slug>.md. By-slug commands (archive/trail/ark-root) check both."""
-    base = os.path.join(root, ".orca", "arks")
-    for cand in (os.path.join(base, slug + ".md"),
-                 os.path.join(base, "archive", slug + ".md")):
-        if os.path.isfile(cand):
-            return cand
-    return None
+def iter_focuses(root, include_done=False):
+    """In-work focuses: child dirs of .orca/ holding a focus.md (excluding done/).
+    Freshest first by mtime. Done focuses live under .orca/done/<name>/."""
+    base = os.path.join(root, ".orca")
+    focuses = []
+    if os.path.isdir(base):
+        for name in os.listdir(base):
+            if name == "done":
+                continue
+            fpath = os.path.join(base, name, "focus.md")
+            if os.path.isfile(fpath):
+                d = _load_doc(fpath)
+                d["slug"], d["dir"] = name, os.path.join(base, name)
+                d["mtime"] = os.path.getmtime(fpath)
+                focuses.append(d)
+        if include_done:
+            for fpath in glob.glob(os.path.join(base, "done", "*", "focus.md")):
+                d = _load_doc(fpath)
+                d["slug"] = os.path.basename(os.path.dirname(fpath))
+                d["dir"] = os.path.dirname(fpath)
+                focuses.append(d)
+    focuses.sort(key=lambda d: d["mtime"], reverse=True)
+    return focuses
 
 
-def iter_threads(home):
-    return _load_docs(os.path.join(home, "threads"))
-
-
-def is_open(ark):
-    # Location is the terminal truth: anything under arks/archive/ is closed.
-    # The legacy `state: archived` field is still honored on read so old arks that
-    # predate the subdir convention stay hidden — back-compat grace, not a mirror
-    # orca maintains (archive no longer writes that field; it moves the file).
-    if os.path.basename(os.path.dirname(ark["path"])) == "archive":
-        return False
-    return ark["fields"].get("state", "active").lower() != "archived"
-
-
-def has_blocker(ark):
-    hay = ark["text"].lower()
-    return "blocker" in hay or "blocked" in hay
-
-
-def unflushed_commits(root, ark_text):
-    """Commits on HEAD newer than the latest one this handoff anchors.
-
-    Content-based staleness (not mtime — mtime lies after a checkout or a stray
-    editor touch). If work was committed *after* the handoff last referenced a
-    commit, the handoff is behind: a hard exit (Ctrl-C / crash) bypasses the Stop
-    hook, so the flush that would have caught up never ran. We cannot recover an
-    unwritten flush, but we can refuse to let the next session believe a stale
-    handoff is current — same contract as `verify`: make the gap visible.
-
-    Returns (count, head_short, capped, tracked).
-      tracked=False -> the ark has no [commit:] anchor at all, so freshness can't
-        be tracked (count is 0; not an alarm, just unprovable — a test/file-only
-        ark is legitimate, it just can't be compared against the commit graph).
-      tracked=True, count>0 -> genuinely behind: commits landed after the newest
-        commit the handoff anchors.
-    Walks at most WINDOW commits back; `capped` is True if we hit the wall
-    without matching an anchored commit."""
-    WINDOW = 50
-    try:
-        out = subprocess.run(
-            ["git", "rev-list", "-n", str(WINDOW), "HEAD"],
-            cwd=root, capture_output=True, text=True,
-        )
-    except FileNotFoundError:
-        return 0, None, False, True
-    if out.returncode != 0:
-        return 0, None, False, True
-    hashes = out.stdout.split()
-    if not hashes:
-        return 0, None, False, True
-    anchored = [m.strip() for k, m in ANCHOR_RE.findall(ark_text) if k == "commit"]
-    if not anchored:
-        return 0, hashes[0][:12], False, False  # untracked, not behind
-    count = 0
-    for h in hashes:
-        if any(h.startswith(a) or a.startswith(h[:7]) for a in anchored if a):
-            return count, hashes[0][:12], False, True
-        count += 1
-    return count, hashes[0][:12], True, True  # anchored, but no match in window
-
-
-def ago(ts):
-    d = max(0, time.time() - ts)
-    if d < 3600:
-        return "%dm ago" % (d // 60)
-    if d < 86400:
-        return "%dh ago" % (d // 3600)
-    return "%dd ago" % (d // 86400)
-
-
-def cmd_init(args):
-    home = meta_home()
-    made = []
-    seeds = [
-        (os.path.join(home, "threads"), None),
-        (os.path.join(home, "decisions.md"),
-         "# decisions — cross-project (meta)\n\nAppend-only. Why, not what.\n"),
-        (os.path.join(home, "trail-archive.md"),
-         "# trail-archive — retired handoffs\n"),
-    ]
-    if not os.path.isdir(home):
-        os.makedirs(home)
-        made.append(home + "/")
-    for path, content in seeds:
-        if content is None:
-            if not os.path.isdir(path):
-                os.makedirs(path)
-                made.append(path + "/")
-        elif not os.path.exists(path):
-            with open(path, "w") as fh:
-                fh.write(content)
-            made.append(path)
-    if not os.path.isdir(os.path.join(home, ".git")):
-        subprocess.run(["git", "init", "-q"], cwd=home)
-        made.append(home + "/.git")
-
-    root = find_repo_root(os.getcwd())
-    pdir = os.path.join(root, ".orca")
-    if not os.path.isdir(os.path.join(pdir, "arks")):
-        os.makedirs(os.path.join(pdir, "arks"))
-        made.append(os.path.join(pdir, "arks") + "/")
-    pdec = os.path.join(pdir, "decisions.md")
-    if not os.path.exists(pdec):
-        with open(pdec, "w") as fh:
-            fh.write("# decisions — %s\n\nWhy this repo's code is the way it is.\n"
-                     % os.path.basename(root))
-        made.append(pdec)
-
-    # register this project root so `orca report` can roll up across all projects.
-    # Append-only, one writer, deduped on read — no mutable index to desync.
-    reg = os.path.join(home, "projects")
-    existing = set()
-    if os.path.isfile(reg):
-        with open(reg) as fh:
-            existing = set(l.strip() for l in fh)
-    if root not in existing:
-        with open(reg, "a") as fh:
-            fh.write(root + "\n")
-        made.append(reg + " (registered %s)" % os.path.basename(root))
-
-    if made:
-        for m in made:
-            print("  %s %s" % (_c(GREEN, "+"), m))
-    else:
-        print(_c(DIM, "already initialized (meta: %s)" % home))
-    return 0
-
-
-def latest_session(text):
-    """Fields of the freshest `### ` block under `## sessions` (schema v2), else {}.
-    Blocks are appended at the BOTTOM (newest last), so the freshest is the LAST
-    block in file order. Single source of truth: all_sessions parses every block
-    chronologically; we take the tail. Returns dict of date/done/why/next/head."""
-    blocks = all_sessions(text)
-    return blocks[-1] if blocks else {}
-
-
-def _all_open_arks(home, cwd_root):
-    """Active arks across every registered project (+ cwd's project if unregistered),
-    each tagged with its own project root. Makes `orca now` location-independent —
-    the same full picture whether you launch from a project or its parent. No more
-    'which directory do I run this from'."""
-    roots = list(registered_projects(home))
-    is_meta = os.path.abspath(os.path.join(cwd_root, ".orca")) == os.path.abspath(home)
-    if (not is_meta and os.path.isdir(os.path.join(cwd_root, ".orca", "arks"))
-            and cwd_root not in roots):
-        roots.append(cwd_root)
+def focus_arks(focus_dir, include_done=False):
+    """Arks under a focus: arks/*.md flat (in-work). Done arks live in arks/done/."""
+    adir = os.path.join(focus_dir, "arks")
     arks = []
-    for r in roots:
-        for a in iter_arks(r):
-            if is_open(a):
-                a = dict(a)
-                a["_root"], a["_proj"] = r, os.path.basename(r)
-                arks.append(a)
+    for f in glob.glob(os.path.join(adir, "*.md")):
+        arks.append(_load_doc(f))
+    if include_done:
+        for f in glob.glob(os.path.join(adir, "done", "*.md")):
+            d = _load_doc(f)
+            d["_done"] = True
+            arks.append(d)
     arks.sort(key=lambda d: d["mtime"], reverse=True)
     return arks
 
 
-def _ark_line(a, indent, root):
-    """One ark: done-when, where you stopped, mental thread, blocker flag, and a
-    staleness warning if commits landed after the last anchored handoff. Prefers
-    schema v2 session blocks (next/head); falls back to v1 handoff bullets.
-    Uses the ark's own project root (a['_root']) when set, so cross-project rollup
-    checks staleness against the right repo."""
-    sess = latest_session(a["text"])
-    if sess:
-        stopped = sess.get("next") or sess.get("done") or "(session has no next)"
-        head = sess.get("head")
-    else:
-        hand = section_bullets(a["text"], "handoff")
-        stopped = hand[-1] if hand else "(no handoff yet)"
-        head = None
-    root = a.get("_root", root)
-    flag = _c(RED, " ⚠ blocker") if has_blocker(a) else ""
-    label = ("%s/%s" % (a["_proj"], a["slug"])) if a.get("_proj") else a["slug"]
-    print("%s· %s%s  %s"
-          % (indent, label, flag,
-             _c(DIM, "done-when: " + a["fields"].get("done-when", "—"))))
-    print("%s    %s %s"
-          % (indent, _c(DIM, "↳ stopped:"), _c(DIM, stopped)))
-    if head:
-        print("%s    %s %s" % (indent, _c(DIM, "↳ head:   "), _c(DIM, head)))
-    n, head_hash, capped, tracked = unflushed_commits(root, a["text"])
-    if not tracked and not sess:
-        # v1 arks with no commit anchor: can't track freshness, say so quietly
-        print("%s    %s" % (indent, _c(DIM, "↳ (no [commit:] anchor — freshness untracked)")))
-    elif tracked and n > 0:
-        plural = "" if n == 1 else "s"
-        print("%s    %s"
-              % (indent, _c(YELLOW, "⚠ %d%s commit%s after last anchored handoff (HEAD %s) — "
-                            "handoff may be behind; reconcile before continuing"
-                            % (n, "+" if capped else "", plural, head_hash))))
-
-
-def cmd_decide(args):
-    """Append a decision + why to .orca/decisions.md (append-only, one writer).
-    The middle continuity layer: next session reads WHY, not just what's done.
-    Meant to be run by the agent the moment a non-obvious call is made."""
-    root = find_repo_root(os.getcwd())
-    ddir = os.path.join(root, ".orca")
-    if not os.path.isdir(ddir):
-        print(_c(RED, "decide: no .orca here — run `orca init` first"))
-        return 2
-    text = " ".join(args.text).strip()
-    if not text:
-        print(_c(RED, "decide: nothing to record"))
-        return 2
-    path = os.path.join(ddir, "decisions.md")
-    if not os.path.exists(path):
-        with open(path, "w") as fh:
-            fh.write("# decisions — %s\n\nWhy this repo is the way it is. Append-only.\n"
-                     % os.path.basename(root))
-    with open(path, "a") as fh:
-        fh.write("- %s — %s\n" % (time.strftime("%Y-%m-%d", time.localtime()), text))
-    print(_c(GREEN, "decided: ") + text)
-    return 0
-
-
-def cmd_archive(args):
-    """Move an ark into arks/archive/ — location is the one terminal 'done' truth,
-    no `state:` flip. Single writer: it renames this one ark file and nothing else;
-    the file content (its append-only `## sessions`) moves byte-for-byte, never
-    rewritten (closing the ark is not closing its history). Archived arks fall out
-    of every live view because those glob arks/*.md, flat. Idempotent — re-archiving
-    an ark already in the subdir is a no-op."""
-    root = find_repo_root(os.getcwd())
-    base = os.path.join(root, ".orca", "arks")
-    live = os.path.join(base, args.slug + ".md")
-    archived = os.path.join(base, "archive", args.slug + ".md")
-    if os.path.isfile(archived) and not os.path.isfile(live):
-        print(_c(DIM, "archive: '%s' already archived" % args.slug))
-        return 0
-    if not os.path.isfile(live):
-        print(_c(RED, "archive: no such ark: %s (.orca/arks/%s.md)" % (args.slug, args.slug)))
-        return 2
-    os.makedirs(os.path.join(base, "archive"), exist_ok=True)
-    os.rename(live, archived)
-    print(_c(GREEN, "archived: ") + args.slug + _c(DIM, "  -> arks/archive/%s.md" % args.slug))
-    return 0
-
-
-def cmd_now(args):
-    """Resume view: goal + open arks + where you stopped + blockers. One view.
-    Location-independent: rolls up active arks across ALL registered projects, so
-    the same picture appears whether you launch from a project or its parent —
-    no 'which directory do I run this from'."""
-    home = meta_home()
-    root = find_repo_root(os.getcwd())
-    threads = iter_threads(home)
-    open_arks = _all_open_arks(home, root)
-
-    print(_c(DIM, "orca now"))
-    if not threads and not open_arks:
-        print(_c(DIM, "  nothing open. `orca init` then add .orca/arks/<slug>.md"))
-        return 0
-
-    claimed = set()
-    for t in threads:
-        print("\n%s %s  %s" % (_c(YELLOW, "▸"), t["slug"], _c(DIM, ago(t["mtime"]))))
-        print("    goal: %s" % t["fields"].get("goal", "—"))
-        for a in [x for x in open_arks if x["fields"].get("thread", "") == t["slug"]]:
-            claimed.add(a["path"])
-            _ark_line(a, "    ", root)
-
-    loose = [a for a in open_arks if a["path"] not in claimed]
-    if loose:
-        if threads:
-            print("\n%s loose arks (no thread)" % _c(YELLOW, "▸"))
-        for a in loose:
-            _ark_line(a, "  ", root)
-    return 0
+def find_ark(root, slug):
+    """Resolve <slug> to (ark_doc, focus_doc, is_done) across all focuses (in-work
+    and done), live ark before done ark. Returns (None, None, None) if not found."""
+    for focus in iter_focuses(root, include_done=True):
+        for include_done in (False, True):
+            for a in focus_arks(focus["dir"], include_done=include_done):
+                if a["slug"] == slug:
+                    return a, focus, bool(a.get("_done"))
+    return None, None, None
 
 
 def all_sessions(text):
-    """Every `### ` block under `## sessions`, in file order. Blocks are appended at
-    the bottom (newest last), so this is chronological oldest->newest: date +
-    done/why/next/head. Multiple done: lines in a block are joined. Raw activity log."""
-    blocks, cur, in_sessions = [], None, False
+    """Every `### ` block under `## Trail`, in file order (newest LAST by convention):
+    date + done/why/next/head. Multiple done: lines in a block are joined."""
+    blocks, cur, in_zone = [], None, False
     for raw in text.splitlines():
         m = HEADING_RE.match(raw)
         if m and len(m.group(1)) <= 2:
             if cur:
                 blocks.append(cur)
                 cur = None
-            in_sessions = bool(SESSIONS_HEADING_RE.match(raw))
+            in_zone = bool(TRAIL_HEADING_RE.match(raw))
             continue
-        if not in_sessions:
+        if not in_zone:
             continue
         if m:  # ### date subheading -> new block
             if cur:
@@ -745,46 +448,269 @@ def all_sessions(text):
     return blocks
 
 
-def cmd_ark_root(args):
-    """Print the absolute project root that owns ark <slug> (the dir whose
-    .orca/arks/<slug>.md exists). Checks the cwd's repo first, then the cross-project
-    registry. Pure orca-registry logic — no knowledge of Claude Code's storage; the
-    resume skill mangles this path into a transcript dir. The point: resume must find
-    the ark's OWN project, not wherever the agent happened to launch from. Path-only
-    on stdout so a skill can `$(orca ark-root <slug>)` it; errors go to stderr."""
-    home = meta_home()
-    cands = [find_repo_root(os.getcwd())] + registered_projects(home)
-    seen = set()
-    for p in cands:
-        if not p or p in seen:
+def latest_session(text):
+    blocks = all_sessions(text)
+    return blocks[-1] if blocks else {}
+
+
+def latest_handoff_text(text):
+    """The freshest handoff to verify: the LAST `### ` block under `## Trail` (or the
+    whole zone if it has none, e.g. legacy bullet handoffs), re-wrapped under a
+    `## Trail` heading so the zone-scoped parsers see it. An accumulating Trail can't
+    keep every historical file:line anchor green as files move/grow; verify proves the
+    CURRENT handoff. Commit anchors are immutable, so they stay green forever — which
+    is why they're the durable choice for a claim you want to survive."""
+    in_zone = False
+    blocks = [[]]  # blocks[0] = pre-### lines in the zone (legacy bullet handoff)
+    for raw in text.splitlines():
+        m = HEADING_RE.match(raw)
+        if m and len(m.group(1)) <= 2:
+            in_zone = bool(TRAIL_HEADING_RE.match(raw))
+            if in_zone:
+                blocks = [[]]
             continue
-        seen.add(p)
-        if find_ark_path(p, args.slug):
-            print(p)
-            return 0
-    sys.stderr.write("ark-root: no project owns ark '%s' (cwd repo or registry)\n" % args.slug)
-    return 2
+        if not in_zone:
+            continue
+        if m:  # ### -> new block
+            blocks.append([])
+            continue
+        blocks[-1].append(raw)
+    chosen = []
+    for b in blocks:
+        if any(s.strip() for s in b):
+            chosen = b
+    return "## Trail\n" + "\n".join(chosen)
+
+
+def has_blocker(doc):
+    hay = doc["text"].lower()
+    return "blocker" in hay or "blocked" in hay
+
+
+def unflushed_commits(root, trail_text):
+    """Commits on HEAD newer than the latest one this Trail anchors. Content-based
+    staleness (not mtime). Returns (count, head_short, capped, tracked)."""
+    WINDOW = 50
+    try:
+        out = subprocess.run(
+            ["git", "rev-list", "-n", str(WINDOW), "HEAD"],
+            cwd=root, capture_output=True, text=True,
+        )
+    except FileNotFoundError:
+        return 0, None, False, True
+    if out.returncode != 0:
+        return 0, None, False, True
+    hashes = out.stdout.split()
+    if not hashes:
+        return 0, None, False, True
+    anchored = [m.strip() for k, m in ANCHOR_RE.findall(trail_text) if k == "commit"]
+    if not anchored:
+        return 0, hashes[0][:12], False, False
+    count = 0
+    for h in hashes:
+        if any(h.startswith(a) or a.startswith(h[:7]) for a in anchored if a):
+            return count, hashes[0][:12], False, True
+        count += 1
+    return count, hashes[0][:12], True, True
+
+
+def ago(ts):
+    d = max(0, time.time() - ts)
+    if d < 3600:
+        return "%dm ago" % (d // 60)
+    if d < 86400:
+        return "%dh ago" % (d // 3600)
+    return "%dd ago" % (d // 86400)
+
+
+# --- commands ---
+
+def cmd_init(args):
+    root = find_repo_root(os.getcwd())
+    base = os.path.join(root, ".orca")
+    made = []
+    for d in (base, os.path.join(base, "done")):
+        if not os.path.isdir(d):
+            os.makedirs(d)
+            made.append(os.path.relpath(d, root) + "/")
+    if made:
+        for m in made:
+            print("  %s %s" % (_c(GREEN, "+"), m))
+        print(_c(DIM, "add a focus: mkdir .orca/01-<name> && write .orca/01-<name>/focus.md"))
+    else:
+        print(_c(DIM, "already initialized (.orca/ in %s)" % root))
+    return 0
+
+
+def _ark_line(a, indent, root, is_done=False):
+    """One ark: done-when, where you stopped (next/head from its latest Trail block),
+    blocker flag, staleness warning."""
+    sess = latest_session(a["text"])
+    stopped = sess.get("next") or sess.get("done") or "(no Trail yet)"
+    head = sess.get("head")
+    tag = _c(DIM, " (done)") if is_done else (_c(RED, " ⚠ blocker") if has_blocker(a) else "")
+    summary = a["fields"].get("intent") or a["fields"].get("done-when") or "—"
+    print("%s· %s%s  %s"
+          % (indent, a["slug"], tag, _c(DIM, summary)))
+    print("%s    %s %s" % (indent, _c(DIM, "↳ stopped:"), _c(DIM, stopped)))
+    if head:
+        print("%s    %s %s" % (indent, _c(DIM, "↳ head:   "), _c(DIM, head)))
+    if not is_done:
+        n, head_hash, capped, tracked = unflushed_commits(root, a["text"])
+        if tracked and n > 0:
+            plural = "" if n == 1 else "s"
+            print("%s    %s"
+                  % (indent, _c(YELLOW, "⚠ %d%s commit%s after last anchored handoff (HEAD %s) — "
+                                "handoff may be behind; reconcile before continuing"
+                                % (n, "+" if capped else "", plural, head_hash))))
+
+
+def cmd_now(args):
+    """Resume view: every in-work focus + its Now + its open arks + where you
+    stopped. Project-local only — reads this repo's .orca/, nothing global."""
+    root = find_repo_root(os.getcwd())
+    focuses = iter_focuses(root)
+
+    print(_c(DIM, "orca now"))
+    if not focuses:
+        print(_c(DIM, "  nothing in-work. `orca init` then add .orca/<NN-name>/focus.md"))
+        return 0
+
+    for f in focuses:
+        flag = _c(RED, " ⚠ blocker") if has_blocker(f) else ""
+        print("\n%s focus %s%s  %s"
+              % (_c(YELLOW, "▸"), f["slug"], flag, _c(DIM, ago(f["mtime"]))))
+        print("    %s %s" % (_c(DIM, "intent:"), f["fields"].get("intent", "—")))
+        now_lines = section_text(f["text"], "Now")
+        for l in now_lines:
+            print("    %s" % _c(DIM, l.rstrip()))
+        n, head_hash, capped, tracked = unflushed_commits(root, f["text"])
+        if tracked and n > 0:
+            plural = "" if n == 1 else "s"
+            print("    %s"
+                  % _c(YELLOW, "⚠ %d%s commit%s after last anchored Trail block (HEAD %s) — "
+                       "handoff may be behind; reconcile before continuing"
+                       % (n, "+" if capped else "", plural, head_hash)))
+        arks = focus_arks(f["dir"])
+        if arks:
+            print("    %s" % _c(DIM, "arks:"))
+            for a in arks:
+                _ark_line(a, "    ", root)
+    return 0
+
+
+def cmd_verify(args):
+    root = find_repo_root(os.getcwd())
+    path = args.arkfile or _default_handoff(root)
+    if not path:
+        print(_c(RED, "verify: no file given and no focus.md under .orca/"))
+        return 2
+    if not os.path.isfile(path):
+        print(_c(RED, "verify: not a file: %s" % path))
+        return 2
+
+    with open(path, "r", errors="replace") as fh:
+        text = fh.read()
+
+    print(_c(DIM, "ark: %s  (root: %s)" % (os.path.relpath(path, root), root)))
+    hand = latest_handoff_text(text)
+    ok, lines, _ = check_anchors(hand, root, args.no_tests, args.timeout)
+    if getattr(args, "judge", False):
+        j_ok, j_lines = judge_pass(hand, root, args.timeout)
+        lines = lines + j_lines
+        ok = ok and j_ok
+    for status, msg in lines:
+        color, tag = _TAG[status]
+        if status == "NONE":
+            print(_c(YELLOW, msg))
+        else:
+            print("  %s %s" % (_c(color, tag), _c(DIM, msg)))
+    print(_c(GREEN, "verify: PASS") if ok else _c(RED, "verify: FAIL"))
+    return 0 if ok else 1
+
+
+def _default_handoff(root):
+    """The freshest in-work focus's focus.md — the live handoff to verify/gate."""
+    focuses = iter_focuses(root)
+    return focuses[0]["path"] if focuses else None
+
+
+def cmd_gate(args):
+    """Is the freshest in-work focus safe to end a session on? exit 0 = yes (or
+    nothing in-work). exit 1 + reason = its latest Trail block is unproven.
+    Non-blocking by nature: a hard exit bypasses hooks, so this just makes a broken
+    handoff visible. Freshness is kept by flushing as you work, not by a gate."""
+    root = find_repo_root(os.getcwd())
+    focuses = iter_focuses(root)
+    if not focuses:
+        return 0
+    f = focuses[0]
+    ok, lines, n = check_anchors(latest_handoff_text(f["text"]), root,
+                                 no_tests=True, timeout=args.timeout)
+    if ok and n > 0:
+        return 0
+    why = "; ".join("%s %s" % (s, m) for s, m in lines if s in ("FAIL", "BARE", "NONE")) \
+          or "no checkable anchors"
+    print("handoff for focus '%s' is not verified: %s" % (f["slug"], why))
+    return 1
+
+
+def _decide_target(root):
+    """Where a decision lands: the single in-work focus's decisions.md. With zero or
+    several in-work focuses, fall back to project-level .orca/decisions.md so a
+    decision is never dropped (ambiguity shouldn't lose the why)."""
+    focuses = iter_focuses(root)
+    if len(focuses) == 1:
+        return os.path.join(focuses[0]["dir"], "decisions.md"), focuses[0]["slug"]
+    return os.path.join(root, ".orca", "decisions.md"), os.path.basename(root)
+
+
+def cmd_decide(args):
+    """Append a decision + why to the focus's decisions.md (append-only, one writer).
+    The middle continuity layer: next session reads WHY, not just what's done."""
+    root = find_repo_root(os.getcwd())
+    if not os.path.isdir(os.path.join(root, ".orca")):
+        print(_c(RED, "decide: no .orca here — run `orca init` first"))
+        return 2
+    text = " ".join(args.text).strip()
+    if not text:
+        print(_c(RED, "decide: nothing to record"))
+        return 2
+    path, label = _decide_target(root)
+    if not os.path.exists(path):
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w") as fh:
+            fh.write("# decisions — %s\n\nWhy this work is the way it is. Append-only.\n"
+                     % label)
+    with open(path, "a") as fh:
+        fh.write("- %s — %s\n" % (time.strftime("%Y-%m-%d", time.localtime()), text))
+    print(_c(GREEN, "decided: ") + text)
+    return 0
 
 
 def cmd_trail(args):
-    """One ark's whole arc, oldest->newest: the chain of thought you can re-read to
-    remember how the work actually unfolded. `now` shows only the freshest block;
-    trail shows them all, in the order they happened. Derived on read from the v2
-    `## sessions` blocks — nothing stored, nothing rewritten."""
+    """One focus's (or ark's) whole arc, oldest->newest: the chain of thought you can
+    re-read to remember how the work actually unfolded. Derived on read from the
+    `## Trail` blocks — nothing stored, nothing rewritten."""
     root = find_repo_root(os.getcwd())
-    path = find_ark_path(root, args.slug)
-    if not path:
-        print(_c(RED, "trail: no such ark: %s (.orca/arks/%s.md)" % (args.slug, args.slug)))
-        return 2
-    with open(path, "r", errors="replace") as fh:
-        text = fh.read()
-    fields = parse_fields(text)
-    blocks = all_sessions(text)  # already chronological (file order = newest-last convention)
+    # a focus dir name, or an ark slug
+    focuses = {f["slug"]: f for f in iter_focuses(root, include_done=True)}
+    if args.slug in focuses:
+        doc = focuses[args.slug]
+    else:
+        ark, _focus, _done = find_ark(root, args.slug)
+        if not ark:
+            print(_c(RED, "trail: no such focus or ark: %s" % args.slug))
+            return 2
+        doc = ark
+    text = doc["text"]
+    fields = doc["fields"]
+    blocks = all_sessions(text)
 
     print(_c(DIM, "trail: %s" % args.slug)
           + ("  " + _c(DIM, "done-when: " + fields["done-when"]) if fields.get("done-when") else ""))
     if not blocks:
-        print(_c(DIM, "  no session blocks yet (v1 handoff or empty ark)"))
+        print(_c(DIM, "  no Trail blocks yet"))
         return 0
     for b in blocks:
         print("\n%s %s" % (_c(YELLOW, "──"), b.get("date", "?")))
@@ -799,76 +725,64 @@ def cmd_trail(args):
     return 0
 
 
-def registered_projects(home):
-    """Project roots from the append-only registry, deduped, only those still present."""
-    path = os.path.join(home, "projects")
-    if not os.path.isfile(path):
-        return []
-    seen, out = set(), []
-    with open(path) as fh:
-        for line in fh:
-            p = line.strip()
-            if not p or p in seen:
-                continue
-            if os.path.isdir(os.path.join(p, ".orca", "arks")):
-                seen.add(p)
-                out.append(p)
-    return out
+def _append_log(focus, slug, state):
+    """Append one ark state-transition line to a focus's `## Log` (append-only).
+    Creates the section if absent."""
+    path = focus["path"]
+    line = "%s  %s  → %s\n" % (time.strftime("%Y-%m-%d", time.localtime()), slug, state)
+    with open(path, "r", errors="replace") as fh:
+        text = fh.read()
+    if re.search(r"^#{1,6}\s+Log\b", text, re.IGNORECASE | re.MULTILINE):
+        if not text.endswith("\n"):
+            text += "\n"
+        text += line
+    else:
+        if not text.endswith("\n"):
+            text += "\n"
+        text += "\n## Log\n<!-- ark state transitions, append-only -->\n" + line
+    with open(path, "w") as fh:
+        fh.write(text)
 
 
-def cmd_report(args):
-    """Cross-project activity log: what you did, where, when — rolled up from the
-    dated session blocks of every registered project's arks. Derived on read."""
-    home = meta_home()
-    projects = registered_projects(home)
+def cmd_done(args):
+    """Finish work by MOVING it — location is the one terminal 'done' truth, no
+    `state:` flip. An ark moves to arks/done/ and gets a line in its focus's
+    `## Log`. A focus moves whole to .orca/done/. File content moves byte-for-byte;
+    closing is never rewriting history. Idempotent."""
     root = find_repo_root(os.getcwd())
-    is_meta = os.path.abspath(os.path.join(root, ".orca")) == os.path.abspath(home)
-    if (not is_meta and os.path.isdir(os.path.join(root, ".orca", "arks"))
-            and root not in projects):
-        projects.append(root)
+    base = os.path.join(root, ".orca")
 
-    cutoff = None
-    if args.since:
-        m = re.match(r"^(\d+)d$", args.since)
-        if m:
-            cutoff = time.strftime("%Y-%m-%d",
-                                   time.localtime(time.time() - int(m.group(1)) * 86400))
-
-    rows = []  # (date, project, thread, slug, done, next, blocker)
-    for proj in projects:
-        pname = os.path.basename(proj)
-        for ark in _load_docs(os.path.join(proj, ".orca", "arks")):
-            thread = ark["fields"].get("thread", "—")
-            blk = has_blocker(ark)
-            for b in all_sessions(ark["text"]):
-                d = b.get("date", "?")
-                if cutoff and re.match(r"^\d{4}-\d{2}-\d{2}$", d) and d < cutoff:
-                    continue
-                rows.append((d, pname, thread, ark["slug"],
-                             b.get("done", ""), b.get("next", ""), blk))
-
-    if not projects:
-        print(_c(DIM, "report: no projects registered. run `orca init` in each project."))
+    # ark first (more common), then focus dir
+    ark, focus, already_done = find_ark(root, args.slug)
+    if ark and not already_done:
+        adir = os.path.dirname(ark["path"])
+        dest_dir = os.path.join(adir, "done")
+        os.makedirs(dest_dir, exist_ok=True)
+        dest = os.path.join(dest_dir, args.slug + ".md")
+        os.rename(ark["path"], dest)
+        _append_log(focus, args.slug, "done")
+        print(_c(GREEN, "done: ") + args.slug
+              + _c(DIM, "  -> %s" % os.path.relpath(dest, root)))
         return 0
-    rows.sort(key=lambda r: r[0], reverse=True)
-    span = (" since %s" % args.since) if args.since else ""
-    print(_c(DIM, "orca report  ·  %d project(s)%s" % (len(projects), span)))
-    if not rows:
-        print(_c(DIM, "  no session activity%s" % span))
+    if ark and already_done:
+        print(_c(DIM, "done: ark '%s' already done" % args.slug))
         return 0
-    last = None
-    for date, pname, thread, slug, done, nxt, blk in rows:
-        if date != last:
-            print("\n%s %s" % (_c(YELLOW, "──"), date))
-            last = date
-        flag = _c(RED, " ⚠") if blk else ""
-        print("  %s%s  %s" % (_c(DIM, "[%s]" % thread), flag,
-                              "%s/%s" % (pname, slug)))
-        if done:
-            print("      %s %s" % (_c(GREEN, "done:"), done[:110]))
-        if nxt:
-            print("      %s %s" % (_c(DIM, "next:"), _c(DIM, nxt[:110])))
-    return 0
+
+    # focus dir?
+    live = os.path.join(base, args.slug)
+    archived = os.path.join(base, "done", args.slug)
+    if os.path.isdir(archived) and not os.path.isdir(live):
+        print(_c(DIM, "done: focus '%s' already done" % args.slug))
+        return 0
+    if os.path.isdir(live) and os.path.isfile(os.path.join(live, "focus.md")):
+        os.makedirs(os.path.join(base, "done"), exist_ok=True)
+        os.rename(live, archived)
+        print(_c(GREEN, "done: ") + args.slug
+              + _c(DIM, "  -> .orca/done/%s/" % args.slug))
+        return 0
+
+    print(_c(RED, "done: no such ark or focus: %s" % args.slug))
+    return 2
 
 
 def main(argv=None):
@@ -876,8 +790,13 @@ def main(argv=None):
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = p.add_subparsers(dest="cmd")
 
-    v = sub.add_parser("verify", help="verify a handoff's anchors against reality")
-    v.add_argument("arkfile", nargs="?", help="ark file (default: freshest under .orca/arks/)")
+    sub.add_parser("init", help="scaffold project .orca/").set_defaults(func=cmd_init)
+
+    sub.add_parser("now", help="resume view: in-work focuses + open arks + where you stopped"
+                   ).set_defaults(func=cmd_now)
+
+    v = sub.add_parser("verify", help="verify a handoff's Trail anchors against reality")
+    v.add_argument("arkfile", nargs="?", help="file (default: freshest in-work focus.md)")
     v.add_argument("--no-tests", action="store_true", help="skip re-running [test:] anchors")
     v.add_argument("--timeout", type=int, default=120, help="per-test timeout seconds")
     v.add_argument("--judge", action="store_true",
@@ -885,31 +804,19 @@ def main(argv=None):
                         "in its evidence (pluggable via ORCA_JUDGE_CMD; off by default)")
     v.set_defaults(func=cmd_verify)
 
-    sub.add_parser("init", help="scaffold meta-tier ~/.orca and project .orca").set_defaults(func=cmd_init)
-
-    sub.add_parser("now", help="resume view: goal + open arks + where you stopped (computed on read)").set_defaults(func=cmd_now)
-
-    r = sub.add_parser("report", help="cross-project activity log from dated session blocks")
-    r.add_argument("--since", help="only blocks newer than e.g. 7d, 14d")
-    r.set_defaults(func=cmd_report)
-
-    d = sub.add_parser("decide", help="append a decision + why to .orca/decisions.md (append-only)")
-    d.add_argument("text", nargs="+", help="the decision and its reason, e.g. \"per-axis collision — gives wall-slide for free\"")
+    d = sub.add_parser("decide", help="append a decision + why to the focus's decisions.md")
+    d.add_argument("text", nargs="+", help="the decision and its reason, e.g. \"per-axis collision — wall-slide for free\"")
     d.set_defaults(func=cmd_decide)
 
-    ar = sub.add_parser("ark-root", help="print the project root that owns an ark (cwd repo, then registry)")
-    ar.add_argument("slug", help="ark slug, i.e. .orca/arks/<slug>.md")
-    ar.set_defaults(func=cmd_ark_root)
-
-    tr = sub.add_parser("trail", help="render one ark's sessions oldest->newest (chain of thought, derived on read)")
-    tr.add_argument("slug", help="ark slug, i.e. .orca/arks/<slug>.md")
+    tr = sub.add_parser("trail", help="render one focus's (or ark's) Trail oldest->newest")
+    tr.add_argument("slug", help="focus dir name or ark slug")
     tr.set_defaults(func=cmd_trail)
 
-    a = sub.add_parser("archive", help="flip an ark's state to archived (terminal 'done' flag; one writer)")
-    a.add_argument("slug", help="ark slug, i.e. .orca/arks/<slug>.md")
-    a.set_defaults(func=cmd_archive)
+    dn = sub.add_parser("done", help="finish an ark (-> arks/done/ + Log line) or a focus (-> .orca/done/)")
+    dn.add_argument("slug", help="ark slug or focus dir name")
+    dn.set_defaults(func=cmd_done)
 
-    g = sub.add_parser("gate", help="exit 1 + reason if the freshest active ark's handoff isn't verified (non-blocking warn)")
+    g = sub.add_parser("gate", help="exit 1 + reason if the freshest focus's latest Trail block isn't verified")
     g.add_argument("--timeout", type=int, default=120, help="per-test timeout seconds")
     g.set_defaults(func=cmd_gate)
 

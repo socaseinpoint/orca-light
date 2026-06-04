@@ -10,9 +10,9 @@ command -v orca >/dev/null 2>&1 && ORCA=orca
 if [ -d "$(pwd)/.orca" ] || [ -d "$(git rev-parse --show-toplevel 2>/dev/null)/.orca" ]; then
   cat <<'EOF'
 orca protocol — keep continuity current as you work (no one will ask):
-- after each meaningful step you commit, update the active ark's `## handoff`: what's done + anchors [file:path:LINE] [commit:HASH] [test:CMD]; future steps go under `## next` (no anchor).
-- in that same step, record any non-obvious decision: `orca decide "<decision> — <why>"`.
+- after each meaningful step you commit, append/update a block in the in-work focus's `## Trail`: a `done:` line with anchors [file:path:LINE] [commit:HASH] [test:CMD], plus `why:`/`next:`/`head:` narrative (no anchor needed).
+- in that same step, record any non-obvious decision: `orca decide "<decision> — <why>"` (lands in the focus's decisions.md).
 - flush small and often — a hard exit (Ctrl-C/crash) only loses what wasn't flushed yet; there is no gate that can save unflushed work.
-- need older discussion not in the ark or decisions? it's in claude-mem — use the mem-search skill.
+- finishing a deliverable? `orca done <slug>` moves the ark to arks/done/ + logs it; finishing the campaign moves the focus to .orca/done/.
 EOF
 fi
