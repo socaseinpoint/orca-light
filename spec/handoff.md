@@ -54,9 +54,9 @@ intent: <why this campaign exists>
 updated: <YYYY-MM-DD>
 ```
 
-`Now` / `Open` / `Trail` are not stored fields — they are *derived*: Now = freshness
-ordering, Open = arks whose `state` ≠ archived, Trail = handoff bullets merged across
-a thread's arks. `orca init` scaffolds the tiers; `orca day/glance/report` render them.
+`Now` / `Open` are not stored fields — they are *derived*: Now = freshness
+ordering, Open = arks whose `state` ≠ archived. `orca init` scaffolds the tiers;
+`orca now` renders them (goal + open arks + where you stopped + blockers).
 
 ## Anchor durability
 
@@ -80,5 +80,5 @@ Wire `orca verify` into the Stop hook so a session cannot end on a fabricated ha
 
 The handoff carries *evidence*, not status. There is no `planned→review→done`
 field for anyone to flip, no journal to desync, no lock. Each ark owns its file;
-views (`day`/`glance`/`report`) are computed from arks on read. Partition +
+the `orca now` view is computed from arks on read. Partition +
 derivation — the thing the old orca failed to hold. See `../archive/.../LESSON.md`.

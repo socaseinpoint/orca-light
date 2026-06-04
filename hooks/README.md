@@ -5,9 +5,9 @@ to whatever ECC / other hooks you already run — append to the arrays, don't re
 
 | Hook | Script | Effect |
 |---|---|---|
-| SessionStart | `session-start.sh` | injects `orca day` as context |
+| SessionStart | `session-start.sh` | injects `orca now` as context |
 | Stop | `stop.sh` | `orca verify --no-tests`, warns if the handoff's anchors don't hold |
-| PreCompact | `pre-compact.sh` | flushes `orca glance` so the "why" survives compaction |
+| PreCompact | `pre-compact.sh` | flushes `orca now` so the "why" survives compaction |
 
 `--no-tests` keeps Stop latency low (no test re-runs on every stop). Run full
 `orca verify` by hand when trust matters.

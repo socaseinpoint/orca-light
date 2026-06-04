@@ -11,8 +11,8 @@ arcs, decisions (why), and the trusted handoff between sessions.
 
 - **One writer per file.** Each ark (`.orca/arks/<slug>.md`) owns its own file. No
   shared write → no races → no locks.
-- **Views computed on read.** `day` / `glance` / `report` are rendered from arks
-  when you ask. Nothing derived is stored, so nothing can desync.
+- **Views computed on read.** `orca now` is rendered from arks when you ask.
+  Nothing derived is stored, so nothing can desync.
 - **Arks are archived, never flipped.** No `planned→review→done` status field. State
   is the file; history is git.
 
@@ -44,9 +44,9 @@ See `spec/handoff.md` for the format.
 
 | Hook | Does |
 |---|---|
-| SessionStart | inject `orca day` as context |
+| SessionStart | inject `orca now` as context |
 | Stop | `orca verify --no-tests`, warns if the handoff doesn't hold (never blocks) |
-| PreCompact | flush `orca glance` before compression |
+| PreCompact | flush `orca now` before compression |
 
 Scripts in `hooks/`; wiring snippet in `hooks/README.md`. The CLI never writes
 config — wiring is a human `/config` step, by design.
@@ -55,6 +55,6 @@ config — wiring is a human `/config` step, by design.
 
 - [x] repo scaffold + `bin/orca`
 - [x] proof-handoff verifier (`orca verify`) — the trust core
-- [x] derived views (`day`/`glance`/`report`) — computed on read
+- [x] derived view (`orca now`) — computed on read
 - [x] meta-tier `~/.orca/` + `orca init`
 - [x] hooks (`hooks/*.sh`, additive; wiring is manual)

@@ -16,9 +16,7 @@ Anchors (inline in handoff bullets):
 Usage:
   orca init                            scaffold meta-tier ~/.orca + project .orca
   orca verify [ARKFILE] [--no-tests]   check a handoff's anchors against reality
-  orca day                             morning: Now threads + their Open arks
-  orca glance                          midday: where work sits + blockers
-  orca report                          evening: today's Trail + commits
+  orca now                             resume: goal + open arks + where you stopped + blockers
 
 Topology (all views derived on read, nothing derived is stored):
   ~/.orca/threads/<thread>.md   cross-project intent + goal (one writer)
@@ -314,87 +312,44 @@ def cmd_init(args):
     return 0
 
 
-def cmd_day(args):
-    """Morning: Now threads + their Open arks, distance-to-goal by freshness."""
+def _ark_line(a, indent):
+    """One ark: done-when, where you stopped (last handoff bullet), blocker flag."""
+    hand = section_bullets(a["text"], "handoff")
+    stopped = hand[-1] if hand else "(no handoff yet)"
+    flag = _c(RED, " ⚠ blocker") if has_blocker(a) else ""
+    print("%s· %s%s  %s"
+          % (indent, a["slug"], flag,
+             _c(DIM, "done-when: " + a["fields"].get("done-when", "—"))))
+    print("%s    %s %s"
+          % (indent, _c(DIM, "↳ stopped:"), _c(DIM, stopped)))
+
+
+def cmd_now(args):
+    """Resume view: goal + open arks + where you stopped + blockers. One view."""
     home = meta_home()
     root = find_repo_root(os.getcwd())
     threads = iter_threads(home)
-    arks = iter_arks(root)
-    open_arks = [a for a in arks if is_open(a)]
-
-    print(_c(DIM, "orca day  ·  %s" % os.path.basename(root)))
-    if threads:
-        claimed = set()
-        for t in threads:
-            goal = t["fields"].get("goal", "—")
-            print("\n%s %s  %s" % (_c(YELLOW, "▸"), t["slug"], _c(DIM, ago(t["mtime"]))))
-            print("    goal: %s" % goal)
-            mine = [a for a in open_arks if a["fields"].get("thread", "") == t["slug"]]
-            for a in mine:
-                claimed.add(a["slug"])
-                print("    · %s  %s  %s"
-                      % (a["slug"], _c(DIM, "done-when: " + a["fields"].get("done-when", "—")),
-                         _c(DIM, ago(a["mtime"]))))
-        loose = [a for a in open_arks if a["slug"] not in claimed]
-        if loose:
-            print("\n%s loose arks (no thread)" % _c(YELLOW, "▸"))
-            for a in loose:
-                print("    · %s  %s" % (a["slug"], _c(DIM, ago(a["mtime"]))))
-    else:
-        if not open_arks:
-            print(_c(DIM, "  nothing open. `orca init` then add .orca/arks/<slug>.md"))
-        for a in open_arks:
-            print("  · %s  %s  %s"
-                  % (a["slug"], _c(DIM, "done-when: " + a["fields"].get("done-when", "—")),
-                     _c(DIM, ago(a["mtime"]))))
-    return 0
-
-
-def cmd_glance(args):
-    """Midday: where the work sits + what blocks it."""
-    root = find_repo_root(os.getcwd())
     open_arks = [a for a in iter_arks(root) if is_open(a)]
-    print(_c(DIM, "orca glance  ·  %s" % os.path.basename(root)))
-    if not open_arks:
-        print(_c(DIM, "  no open arks"))
+
+    print(_c(DIM, "orca now  ·  %s" % os.path.basename(root)))
+    if not threads and not open_arks:
+        print(_c(DIM, "  nothing open. `orca init` then add .orca/arks/<slug>.md"))
         return 0
-    for a in open_arks:
-        hand = section_bullets(a["text"], "handoff")
-        last = hand[-1] if hand else _c(DIM, "(no handoff yet)")
-        flag = _c(RED, " ⚠ blocker") if has_blocker(a) else ""
-        print("  · %s%s\n      %s" % (a["slug"], flag, last))
-    return 0
 
+    claimed = set()
+    for t in threads:
+        print("\n%s %s  %s" % (_c(YELLOW, "▸"), t["slug"], _c(DIM, ago(t["mtime"]))))
+        print("    goal: %s" % t["fields"].get("goal", "—"))
+        for a in [x for x in open_arks if x["fields"].get("thread", "") == t["slug"]]:
+            claimed.add(a["slug"])
+            _ark_line(a, "    ")
 
-def cmd_report(args):
-    """Evening: today's Trail (handoffs touched today) + archived + commits."""
-    root = find_repo_root(os.getcwd())
-    arks = iter_arks(root)
-    today = time.strftime("%Y-%m-%d", time.localtime())
-    print(_c(DIM, "orca report  ·  %s  ·  %s" % (os.path.basename(root), today)))
-
-    fresh = [a for a in arks
-             if time.strftime("%Y-%m-%d", time.localtime(a["mtime"])) == today]
-    print("\n%s Trail (touched today)" % _c(YELLOW, "▸"))
-    if not fresh:
-        print(_c(DIM, "  —"))
-    for a in fresh:
-        for b in section_bullets(a["text"], "handoff"):
-            print("  · [%s] %s" % (a["slug"], b))
-
-    archived = [a for a in arks if not is_open(a)]
-    if archived:
-        print("\n%s archived" % _c(YELLOW, "▸"))
-        for a in archived:
-            print("  · %s" % a["slug"])
-
-    print("\n%s commits today" % _c(YELLOW, "▸"))
-    out = subprocess.run(
-        ["git", "log", "--oneline", "--since=midnight"],
-        cwd=root, capture_output=True, text=True,
-    )
-    body = out.stdout.strip()
-    print(("  " + body.replace("\n", "\n  ")) if body else _c(DIM, "  —"))
+    loose = [a for a in open_arks if a["slug"] not in claimed]
+    if loose:
+        if threads:
+            print("\n%s loose arks (no thread)" % _c(YELLOW, "▸"))
+        for a in loose:
+            _ark_line(a, "  ")
     return 0
 
 
@@ -411,9 +366,7 @@ def main(argv=None):
 
     sub.add_parser("init", help="scaffold meta-tier ~/.orca and project .orca").set_defaults(func=cmd_init)
 
-    views = {"day": cmd_day, "glance": cmd_glance, "report": cmd_report}
-    for name, fn in views.items():
-        sub.add_parser(name, help="derived view (computed on read)").set_defaults(func=fn)
+    sub.add_parser("now", help="resume view: goal + open arks + where you stopped (computed on read)").set_defaults(func=cmd_now)
 
     args = p.parse_args(argv)
     if not getattr(args, "func", None):

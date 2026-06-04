@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Views are derived on read — no stored state. Assert init scaffolds the tiers and
-# day/glance/report render from ark + thread files (not from any cache).
+# `now` renders from ark + thread files (not from any cache).
 set -u
 
 ORCA="$(cd "$(dirname "$0")/.." && pwd)/bin/orca"
@@ -32,19 +32,13 @@ printf '# ark: live\nthread: t1\ndone-when: it works\nstate: active\n\n## handof
 printf '# ark: stuck\nthread: t1\nstate: active\n\n## handoff\n- BLOCKER: waiting on review.\n' > .orca/arks/stuck.md
 printf '# ark: old\nthread: t1\nstate: archived\n\n## handoff\n- finished. [file:f.txt:1]\n' > .orca/arks/old.md
 
-"$ORCA" day >/tmp/orca_v 2>&1
-want "t1" "day shows thread"
-want "ship the thing" "day shows goal"
-want "live" "day lists open ark"
-grep -qF "old" /tmp/orca_v && { echo "  FAIL — day shows archived ark"; fail=$((fail+1)); } || { echo "  ok   — day hides archived ark"; pass=$((pass+1)); }
-
-"$ORCA" glance >/tmp/orca_v 2>&1
-want "blocker" "glance flags blocker"
-want "did a step" "glance shows last handoff bullet"
-
-"$ORCA" report >/tmp/orca_v 2>&1
-want "seed commit one" "report shows today's commit"
-want "stuck" "report Trail includes touched ark"
+"$ORCA" now >/tmp/orca_v 2>&1
+want "t1" "now shows thread"
+want "ship the thing" "now shows goal"
+want "live" "now lists open ark"
+grep -qF "old" /tmp/orca_v && { echo "  FAIL — now shows archived ark"; fail=$((fail+1)); } || { echo "  ok   — now hides archived ark"; pass=$((pass+1)); }
+want "blocker" "now flags blocker"
+want "did a step" "now shows where you stopped (last handoff bullet)"
 
 echo "result: $pass passed, $fail failed"
 [ "$fail" = 0 ]
