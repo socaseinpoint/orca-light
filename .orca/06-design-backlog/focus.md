@@ -25,3 +25,4 @@ Greenfield batch on a frozen core. Decided with the user: none of the four backl
 ## Log
 <!-- ark state transitions, append-only -->
 2026-06-04  external-pointers  → done
+2026-06-04  flush-skill  → done
