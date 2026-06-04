@@ -738,6 +738,39 @@ def all_sessions(text):
     return blocks
 
 
+def cmd_trail(args):
+    """One ark's whole arc, oldest->newest: the chain of thought you can re-read to
+    remember how the work actually unfolded. `now` shows only the freshest block;
+    trail shows them all, in the order they happened. Derived on read from the v2
+    `## sessions` blocks — nothing stored, nothing rewritten."""
+    root = find_repo_root(os.getcwd())
+    path = os.path.join(root, ".orca", "arks", args.slug + ".md")
+    if not os.path.isfile(path):
+        print(_c(RED, "trail: no such ark: %s (.orca/arks/%s.md)" % (args.slug, args.slug)))
+        return 2
+    with open(path, "r", errors="replace") as fh:
+        text = fh.read()
+    fields = parse_fields(text)
+    blocks = list(reversed(all_sessions(text)))  # all_sessions is newest-first; flip to chrono
+
+    print(_c(DIM, "trail: %s" % args.slug)
+          + ("  " + _c(DIM, "done-when: " + fields["done-when"]) if fields.get("done-when") else ""))
+    if not blocks:
+        print(_c(DIM, "  no session blocks yet (v1 handoff or empty ark)"))
+        return 0
+    for b in blocks:
+        print("\n%s %s" % (_c(YELLOW, "──"), b.get("date", "?")))
+        if b.get("done"):
+            print("    %s %s" % (_c(GREEN, "done:"), b["done"]))
+        if b.get("why"):
+            print("    %s %s" % (_c(DIM, "why: "), _c(DIM, b["why"])))
+        if b.get("next"):
+            print("    %s %s" % (_c(DIM, "next:"), _c(DIM, b["next"])))
+        if b.get("head"):
+            print("    %s %s" % (_c(DIM, "head:"), _c(DIM, b["head"])))
+    return 0
+
+
 def registered_projects(home):
     """Project roots from the append-only registry, deduped, only those still present."""
     path = os.path.join(home, "projects")
@@ -835,6 +868,10 @@ def main(argv=None):
     d = sub.add_parser("decide", help="append a decision + why to .orca/decisions.md (append-only)")
     d.add_argument("text", nargs="+", help="the decision and its reason, e.g. \"per-axis collision — gives wall-slide for free\"")
     d.set_defaults(func=cmd_decide)
+
+    tr = sub.add_parser("trail", help="render one ark's sessions oldest->newest (chain of thought, derived on read)")
+    tr.add_argument("slug", help="ark slug, i.e. .orca/arks/<slug>.md")
+    tr.set_defaults(func=cmd_trail)
 
     a = sub.add_parser("archive", help="flip an ark's state to archived (terminal 'done' flag; one writer)")
     a.add_argument("slug", help="ark slug, i.e. .orca/arks/<slug>.md")
