@@ -96,6 +96,18 @@ tokens. Resolve these first and bake them into the prompt:
   ```bash
   ROOT="$(orca ark-root <slug>)"   # registry-resolved owner of .orca/arks/<slug>.md
   ```
+  **Warn on divergence — make the silent gap loud.** The launch-dir binding is a
+  *feature* (dir = project = scope, zero-config); the only defect is when it diverges
+  silently. So if `ROOT` ≠ `pwd`, surface it before dispatching:
+  ```bash
+  [ "$ROOT" != "$PWD" ] && echo "⚠ launched from $PWD but ark lives in $ROOT — \
+ark-root fixes THIS resume, but if your prior session ran from yet another dir its \
+transcript is under that dir's path and may be unfindable. Habit: launch from the project dir."
+  ```
+  This is the closeable half of the seam. `ark-root` resolves *forward* (this resume
+  reads the right transcripts regardless of `pwd`); it cannot relocate *backward* a
+  prior session whose transcript was written under a different launch dir. The warn
+  turns that irreducible hole from silent into visible — that's all orca can do about it.
 - **Transcript dir** — Claude Code stores per-project transcripts at
   `~/.claude/projects/<slug>/`, where `<slug>` is the **project root's** absolute
   path with every `/` (and `.`) replaced by `-`. Mangle `$ROOT`, not `pwd`:
