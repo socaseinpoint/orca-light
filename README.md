@@ -40,18 +40,21 @@ See `spec/handoff.md` for the format.
 | meta | `~/.orca/` (own git, cross-project) | `threads/<thread>.md`, `decisions.md`, `trail-archive.md` |
 | project | `<project>/.orca/` (committed with repo) | `arks/<slug>.md`, `decisions.md` |
 
-## Hooks (additive to ECC, planned)
+## Hooks (additive to ECC)
 
 | Hook | Does |
 |---|---|
-| SessionStart | load context (day view + active ark) |
-| Stop | write + `orca verify` the handoff |
-| PreCompact | flush working notes before compression |
+| SessionStart | inject `orca day` as context |
+| Stop | `orca verify --no-tests`, warns if the handoff doesn't hold (never blocks) |
+| PreCompact | flush `orca glance` before compression |
+
+Scripts in `hooks/`; wiring snippet in `hooks/README.md`. The CLI never writes
+config — wiring is a human `/config` step, by design.
 
 ## Status
 
 - [x] repo scaffold + `bin/orca`
 - [x] proof-handoff verifier (`orca verify`) — the trust core
-- [ ] derived views (`day`/`glance`/`report`)
-- [ ] meta-tier `~/.orca/`
-- [ ] hooks wired
+- [x] derived views (`day`/`glance`/`report`) — computed on read
+- [x] meta-tier `~/.orca/` + `orca init`
+- [x] hooks (`hooks/*.sh`, additive; wiring is manual)

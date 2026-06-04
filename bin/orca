@@ -14,16 +14,24 @@ Anchors (inline in handoff bullets):
   [test:COMMAND]     -> COMMAND re-runs with exit 0 (skipped with --no-tests)
 
 Usage:
-  orca verify [ARKFILE] [--no-tests] [--timeout N]
-  orca day        (stub)
-  orca glance     (stub)
-  orca report     (stub)
+  orca init                            scaffold meta-tier ~/.orca + project .orca
+  orca verify [ARKFILE] [--no-tests]   check a handoff's anchors against reality
+  orca day                             morning: Now threads + their Open arks
+  orca glance                          midday: where work sits + blockers
+  orca report                          evening: today's Trail + commits
+
+Topology (all views derived on read, nothing derived is stored):
+  ~/.orca/threads/<thread>.md   cross-project intent + goal (one writer)
+  <project>/.orca/arks/<slug>.md   a thread of work: intent, done-when, handoff
+Override the meta home with ORCA_HOME (used by tests).
 """
 import argparse
+import glob
 import os
 import re
 import subprocess
 import sys
+import time
 
 ANCHOR_RE = re.compile(r"\[(file|commit|test):([^\]]+)\]")
 HANDOFF_HEADING_RE = re.compile(r"^#{1,6}\s+handoff\b", re.IGNORECASE)
@@ -178,11 +186,216 @@ def cmd_verify(args):
     return 0 if ok else 1
 
 
-def _stub(name):
-    def run(args):
-        print("orca %s: not built yet (Phase 6.3 — derived views)" % name)
+# --- topology: meta-tier ~/.orca + project .orca, all derivation on read ---
+
+FIELD_RE = re.compile(r"([A-Za-z][\w-]*):\s*(.*)$")
+
+
+def meta_home():
+    """Cross-project meta-tier. ORCA_HOME override keeps tests off real ~/.orca."""
+    return os.environ.get("ORCA_HOME") or os.path.join(os.path.expanduser("~"), ".orca")
+
+
+def parse_fields(text):
+    """Leading `key: value` block (after the title heading, before first section)."""
+    fields = {}
+    for raw in text.splitlines():
+        s = raw.strip()
+        if s.startswith("#"):
+            continue
+        if not s:
+            if fields:
+                break
+            continue
+        m = FIELD_RE.match(s)
+        if m:
+            fields[m.group(1).lower()] = m.group(2).strip()
+        elif fields:
+            break
+    return fields
+
+
+def section_bullets(text, name):
+    """Bullets under `## <name>`."""
+    out, in_sec = [], False
+    head = re.compile(r"^#{1,6}\s+" + re.escape(name) + r"\b", re.IGNORECASE)
+    for raw in text.splitlines():
+        if raw.startswith("#"):
+            in_sec = bool(head.match(raw))
+            continue
+        if in_sec and BULLET_RE.match(raw):
+            out.append(raw.strip().lstrip("-* ").strip())
+    return out
+
+
+def _load_docs(directory):
+    docs = []
+    for f in sorted(glob.glob(os.path.join(directory, "*.md"))):
+        with open(f, "r", errors="replace") as fh:
+            text = fh.read()
+        docs.append({
+            "slug": os.path.splitext(os.path.basename(f))[0],
+            "path": f, "text": text, "fields": parse_fields(text),
+            "mtime": os.path.getmtime(f),
+        })
+    docs.sort(key=lambda d: d["mtime"], reverse=True)  # freshest first
+    return docs
+
+
+def iter_arks(project_root):
+    return _load_docs(os.path.join(project_root, ".orca", "arks"))
+
+
+def iter_threads(home):
+    return _load_docs(os.path.join(home, "threads"))
+
+
+def is_open(ark):
+    return ark["fields"].get("state", "active").lower() != "archived"
+
+
+def has_blocker(ark):
+    hay = ark["text"].lower()
+    return "blocker" in hay or "blocked" in hay
+
+
+def ago(ts):
+    d = max(0, time.time() - ts)
+    if d < 3600:
+        return "%dm ago" % (d // 60)
+    if d < 86400:
+        return "%dh ago" % (d // 3600)
+    return "%dd ago" % (d // 86400)
+
+
+def cmd_init(args):
+    home = meta_home()
+    made = []
+    seeds = [
+        (os.path.join(home, "threads"), None),
+        (os.path.join(home, "decisions.md"),
+         "# decisions — cross-project (meta)\n\nAppend-only. Why, not what.\n"),
+        (os.path.join(home, "trail-archive.md"),
+         "# trail-archive — retired handoffs\n"),
+    ]
+    if not os.path.isdir(home):
+        os.makedirs(home)
+        made.append(home + "/")
+    for path, content in seeds:
+        if content is None:
+            if not os.path.isdir(path):
+                os.makedirs(path)
+                made.append(path + "/")
+        elif not os.path.exists(path):
+            with open(path, "w") as fh:
+                fh.write(content)
+            made.append(path)
+    if not os.path.isdir(os.path.join(home, ".git")):
+        subprocess.run(["git", "init", "-q"], cwd=home)
+        made.append(home + "/.git")
+
+    root = find_repo_root(os.getcwd())
+    pdir = os.path.join(root, ".orca")
+    if not os.path.isdir(os.path.join(pdir, "arks")):
+        os.makedirs(os.path.join(pdir, "arks"))
+        made.append(os.path.join(pdir, "arks") + "/")
+    pdec = os.path.join(pdir, "decisions.md")
+    if not os.path.exists(pdec):
+        with open(pdec, "w") as fh:
+            fh.write("# decisions — %s\n\nWhy this repo's code is the way it is.\n"
+                     % os.path.basename(root))
+        made.append(pdec)
+
+    if made:
+        for m in made:
+            print("  %s %s" % (_c(GREEN, "+"), m))
+    else:
+        print(_c(DIM, "already initialized (meta: %s)" % home))
+    return 0
+
+
+def cmd_day(args):
+    """Morning: Now threads + their Open arks, distance-to-goal by freshness."""
+    home = meta_home()
+    root = find_repo_root(os.getcwd())
+    threads = iter_threads(home)
+    arks = iter_arks(root)
+    open_arks = [a for a in arks if is_open(a)]
+
+    print(_c(DIM, "orca day  ·  %s" % os.path.basename(root)))
+    if threads:
+        claimed = set()
+        for t in threads:
+            goal = t["fields"].get("goal", "—")
+            print("\n%s %s  %s" % (_c(YELLOW, "▸"), t["slug"], _c(DIM, ago(t["mtime"]))))
+            print("    goal: %s" % goal)
+            mine = [a for a in open_arks if a["fields"].get("thread", "") == t["slug"]]
+            for a in mine:
+                claimed.add(a["slug"])
+                print("    · %s  %s  %s"
+                      % (a["slug"], _c(DIM, "done-when: " + a["fields"].get("done-when", "—")),
+                         _c(DIM, ago(a["mtime"]))))
+        loose = [a for a in open_arks if a["slug"] not in claimed]
+        if loose:
+            print("\n%s loose arks (no thread)" % _c(YELLOW, "▸"))
+            for a in loose:
+                print("    · %s  %s" % (a["slug"], _c(DIM, ago(a["mtime"]))))
+    else:
+        if not open_arks:
+            print(_c(DIM, "  nothing open. `orca init` then add .orca/arks/<slug>.md"))
+        for a in open_arks:
+            print("  · %s  %s  %s"
+                  % (a["slug"], _c(DIM, "done-when: " + a["fields"].get("done-when", "—")),
+                     _c(DIM, ago(a["mtime"]))))
+    return 0
+
+
+def cmd_glance(args):
+    """Midday: where the work sits + what blocks it."""
+    root = find_repo_root(os.getcwd())
+    open_arks = [a for a in iter_arks(root) if is_open(a)]
+    print(_c(DIM, "orca glance  ·  %s" % os.path.basename(root)))
+    if not open_arks:
+        print(_c(DIM, "  no open arks"))
         return 0
-    return run
+    for a in open_arks:
+        hand = section_bullets(a["text"], "handoff")
+        last = hand[-1] if hand else _c(DIM, "(no handoff yet)")
+        flag = _c(RED, " ⚠ blocker") if has_blocker(a) else ""
+        print("  · %s%s\n      %s" % (a["slug"], flag, last))
+    return 0
+
+
+def cmd_report(args):
+    """Evening: today's Trail (handoffs touched today) + archived + commits."""
+    root = find_repo_root(os.getcwd())
+    arks = iter_arks(root)
+    today = time.strftime("%Y-%m-%d", time.localtime())
+    print(_c(DIM, "orca report  ·  %s  ·  %s" % (os.path.basename(root), today)))
+
+    fresh = [a for a in arks
+             if time.strftime("%Y-%m-%d", time.localtime(a["mtime"])) == today]
+    print("\n%s Trail (touched today)" % _c(YELLOW, "▸"))
+    if not fresh:
+        print(_c(DIM, "  —"))
+    for a in fresh:
+        for b in section_bullets(a["text"], "handoff"):
+            print("  · [%s] %s" % (a["slug"], b))
+
+    archived = [a for a in arks if not is_open(a)]
+    if archived:
+        print("\n%s archived" % _c(YELLOW, "▸"))
+        for a in archived:
+            print("  · %s" % a["slug"])
+
+    print("\n%s commits today" % _c(YELLOW, "▸"))
+    out = subprocess.run(
+        ["git", "log", "--oneline", "--since=midnight"],
+        cwd=root, capture_output=True, text=True,
+    )
+    body = out.stdout.strip()
+    print(("  " + body.replace("\n", "\n  ")) if body else _c(DIM, "  —"))
+    return 0
 
 
 def main(argv=None):
@@ -196,9 +409,11 @@ def main(argv=None):
     v.add_argument("--timeout", type=int, default=120, help="per-test timeout seconds")
     v.set_defaults(func=cmd_verify)
 
-    for name in ("day", "glance", "report"):
-        s = sub.add_parser(name, help="derived view (stub)")
-        s.set_defaults(func=_stub(name))
+    sub.add_parser("init", help="scaffold meta-tier ~/.orca and project .orca").set_defaults(func=cmd_init)
+
+    views = {"day": cmd_day, "glance": cmd_glance, "report": cmd_report}
+    for name, fn in views.items():
+        sub.add_parser(name, help="derived view (computed on read)").set_defaults(func=fn)
 
     args = p.parse_args(argv)
     if not getattr(args, "func", None):

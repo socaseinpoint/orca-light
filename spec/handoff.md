@@ -41,6 +41,30 @@ Every handoff bullet MUST carry at least one anchor. A bullet with none is a
 
 A bullet may carry several anchors. Anchors can sit anywhere in the line.
 
+## Thread file (meta-tier)
+
+A thread groups arks across sessions/projects. One file at `~/.orca/threads/<name>.md`,
+one writer (you). An ark joins a thread by naming it in its `thread:` field — membership
+is derived, never stored as a list.
+
+```markdown
+# thread: <name>
+goal: <the north star — maps to a native Workflow goal>
+intent: <why this campaign exists>
+updated: <YYYY-MM-DD>
+```
+
+`Now` / `Open` / `Trail` are not stored fields — they are *derived*: Now = freshness
+ordering, Open = arks whose `state` ≠ archived, Trail = handoff bullets merged across
+a thread's arks. `orca init` scaffolds the tiers; `orca day/glance/report` render them.
+
+## Anchor durability
+
+`commit` and `test` anchors are exact/reproducible. `file:LINE` is checked for
+existence and range only — line numbers drift as code moves, so a `file:LINE` anchor
+proves "this location exists at handoff time," not "this content is forever here."
+Pair a `file:LINE` with a `commit` anchor when you need the reference to survive edits.
+
 ## Verification
 
 ```
