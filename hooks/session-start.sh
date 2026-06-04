@@ -21,5 +21,6 @@ orca protocol — keep continuity current as you work (no one will ask):
 - in that same step, record any non-obvious decision: `orca decide "<decision> — <why>"` (lands in the focus's decisions.md).
 - flush small and often — a hard exit (Ctrl-C/crash) only loses what wasn't flushed yet; there is no gate that can save unflushed work.
 - finishing a deliverable? `orca done <slug>` moves the ark to arks/done/ + logs it; finishing the campaign moves the focus to .orca/done/.
+- nudge to close — orca can't read free-text `done-when`, so YOU are the nudge: when a focus's `done-when` is met (or its latest `next:` already says "done-when met" / "candidate for `orca done`"), don't sit on it waiting to be asked — say "✓ <slug> looks closeable → `orca done <slug>`" and close on the user's nod. Closing is cheap and reversible-by-reopen; a stale in-work focus is the costlier default.
 EOF
 fi
