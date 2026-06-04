@@ -7,6 +7,9 @@ Standalone repo. It does **not** depend on ECC code — it only borrows conventi
 (hook names, session-file shape). ECC owns skills/agents/rules; orca-light owns
 arcs, decisions (why), and the trusted handoff between sessions.
 
+**New here?** See [GUIDE.md](GUIDE.md) — install → init → a narrated walkthrough of
+the whole flow.
+
 ## The one idea: files are state, views are derived
 
 - **One writer per file.** Each ark (`.orca/arks/<slug>.md`) owns its own file. No
@@ -39,7 +42,7 @@ See `spec/handoff.md` for the format.
 orca now                  resume view: threads + open arks + where you stopped + staleness
 orca verify [--judge]     check a handoff's anchors against reality (--judge adds a cheap grader)
 orca trail <slug>         one ark's sessions oldest->newest — the chain of thought
-orca archive <slug>       flip an ark to archived (terminal 'done' flag; one writer)
+orca archive <slug>       move an ark to arks/archive/ (terminal 'done'; location is the truth)
 orca report [--since Nd]  cross-project activity log from dated session blocks
 orca decide "<w> — <why>" append a decision to .orca/decisions.md (the WHY layer)
 orca init · orca gate     scaffold tiers · non-blocking "is the handoff proven?" warn
