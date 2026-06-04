@@ -18,7 +18,7 @@ last is the two-states-via-folders correction). The model:
 - **domain** = a folder that holds the orca store (no goal, just a container).
 - **focus** = the atom of orca — a self-contained numbered dir (`NN-name/`: this
   `focus.md` + `decisions.md` + `arks/`). "orca is the focus." Two states via FOLDER
-  location: in-work (`.orca/NN-name/`) | archived (`.orca/archive/NN-name/`).
+  location: in-work (`.orca/NN-name/`) | done (`.orca/done/NN-name/`).
 - **ark** = a deliverable under the focus; same two-state folder lifecycle.
 - **side-effects** = the real-world result lives OUTSIDE orca (code repo, Jira, SaaS);
   orca only points at it via `done:` anchors — a domain-agnostic side-effect ledger.
