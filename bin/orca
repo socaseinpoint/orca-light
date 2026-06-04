@@ -753,6 +753,27 @@ def all_sessions(text):
     return blocks
 
 
+def cmd_ark_root(args):
+    """Print the absolute project root that owns ark <slug> (the dir whose
+    .orca/arks/<slug>.md exists). Checks the cwd's repo first, then the cross-project
+    registry. Pure orca-registry logic — no knowledge of Claude Code's storage; the
+    resume skill mangles this path into a transcript dir. The point: resume must find
+    the ark's OWN project, not wherever the agent happened to launch from. Path-only
+    on stdout so a skill can `$(orca ark-root <slug>)` it; errors go to stderr."""
+    home = meta_home()
+    cands = [find_repo_root(os.getcwd())] + registered_projects(home)
+    seen = set()
+    for p in cands:
+        if not p or p in seen:
+            continue
+        seen.add(p)
+        if os.path.isfile(os.path.join(p, ".orca", "arks", args.slug + ".md")):
+            print(p)
+            return 0
+    sys.stderr.write("ark-root: no project owns ark '%s' (cwd repo or registry)\n" % args.slug)
+    return 2
+
+
 def cmd_trail(args):
     """One ark's whole arc, oldest->newest: the chain of thought you can re-read to
     remember how the work actually unfolded. `now` shows only the freshest block;
@@ -883,6 +904,10 @@ def main(argv=None):
     d = sub.add_parser("decide", help="append a decision + why to .orca/decisions.md (append-only)")
     d.add_argument("text", nargs="+", help="the decision and its reason, e.g. \"per-axis collision — gives wall-slide for free\"")
     d.set_defaults(func=cmd_decide)
+
+    ar = sub.add_parser("ark-root", help="print the project root that owns an ark (cwd repo, then registry)")
+    ar.add_argument("slug", help="ark slug, i.e. .orca/arks/<slug>.md")
+    ar.set_defaults(func=cmd_ark_root)
 
     tr = sub.add_parser("trail", help="render one ark's sessions oldest->newest (chain of thought, derived on read)")
     tr.add_argument("slug", help="ark slug, i.e. .orca/arks/<slug>.md")

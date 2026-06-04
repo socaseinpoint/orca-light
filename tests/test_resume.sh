@@ -38,6 +38,12 @@ has "orca report" "routes parent-dir runs through report/registry"
 # (c) orca on PATH assumption made explicit
 has "command -v orca" "checks orca is on PATH"
 
+# (c2 / FIX2) transcript dir derives from the CHOSEN ARK's root, NOT launch cwd —
+# the launch-dir seam. Must call ark-root and mangle ROOT (not pwd).
+has "orca ark-root" "resolves the ark's project root via ark-root (not pwd)"
+"$ORCA" --help 2>&1 | grep -qw "ark-root" && { echo "  ok   — binary actually has ark-root"; pass=$((pass+1)); } || { echo "  FAIL — skill leans on ark-root but binary lacks it"; fail=$((fail+1)); }
+grep -qF 'sed '"'"'s/[/.]/-/g'"'"' "$ROOT"' "$SKILL" 2>/dev/null || grep -qF 'printf '"'"'%s'"'"' "$ROOT"' "$SKILL" && { echo "  ok   — mangles \$ROOT, not pwd"; pass=$((pass+1)); } || { echo "  FAIL — should mangle \$ROOT"; fail=$((fail+1)); }
+
 # core flow: subagent reads PRIOR transcript, returns one 4-layer block, we append+verify
 has "transcript" "dispatches over the prior transcript"
 has "done:" "block carries the proven done: layer"

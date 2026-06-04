@@ -88,15 +88,28 @@ The prior transcript is large; it must **never enter this main context window**.
 Dispatch a subagent (Task tool, `general-purpose`) to read it and return ~200
 tokens. Resolve these first and bake them into the prompt:
 
-- **Project root** — `git rev-parse --show-toplevel` (or the `.orca`-bearing dir).
-- **Transcript dir** — Claude Code stores per-project transcripts at
-  `~/.claude/projects/<slug>/`, where `<slug>` is the project's absolute path with
-  every `/` (and `.`) replaced by `-`. Compute it:
+- **Project root — derive it from the CHOSEN ARK, never from `pwd`.** This is the
+  seam that bites: orca's state is global (`~/.orca` + a symlinked binary works from
+  anywhere), but **Claude Code keys transcripts by the directory it was launched
+  from** — `.claude/` locality is per-directory. So if you resume from a parent dir,
+  `pwd` points at the wrong project. Ask orca which project owns the ark:
   ```bash
-  printf '%s\n' "$(pwd)" | sed 's/[/.]/-/g'   # -> e.g. -Users-you-Documents-projects-foo
+  ROOT="$(orca ark-root <slug>)"   # registry-resolved owner of .orca/arks/<slug>.md
+  ```
+- **Transcript dir** — Claude Code stores per-project transcripts at
+  `~/.claude/projects/<slug>/`, where `<slug>` is the **project root's** absolute
+  path with every `/` (and `.`) replaced by `-`. Mangle `$ROOT`, not `pwd`:
+  ```bash
+  TRANSCRIPT_DIR="$HOME/.claude/projects/$(printf '%s' "$ROOT" | sed 's/[/.]/-/g')"
   ```
   The transcripts are `*.jsonl` there, newest by mtime. The **current** session is
   the freshest file (being written now); the **prior** session is the next-freshest.
+  > Caveat: this finds the prior transcript only if that prior work was itself
+  > launched from `$ROOT`. If it was launched from somewhere else, its transcript
+  > lives under *that* dir's mangled path. The robust habit (and what to tell the
+  > user): **launch Claude Code from the project directory** so transcripts and ark
+  > share one locality. `ark-root` removes the launch-dir dependence for *this*
+  > session; it cannot retroactively relocate a prior session's transcript.
 - **Last anchored commit** — the newest `[commit:HASH]` in the ark's freshest
   `done:` line, so the subagent only diffs work since then (`git log <HASH>..HEAD`).
 - **Live command surface** — paste the `orca --help` output from Step 0.
