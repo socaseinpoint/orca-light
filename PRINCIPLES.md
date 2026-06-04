@@ -73,7 +73,16 @@ load-bearing — a session maps to exactly one ark by construction, which define
 the cross-ark attribution/demux problem instead of solving it with machinery. (3)
 **compression fidelity** — a small session is a small transcript, so resume's
 reconstruction has less to compress and drops less; bloated sessions lose detail at
-the squeeze. **Test:** "is this the current ark's work?" If no → park it, don't do it
+the squeeze. The close→open loop sharpens this further: every session is *bracketed*
+— an intro (the open-time where-you-stopped) and an outro (the close-time
+summary/runway), both deposited in the transcript. They give the compressor a *frame*
+(intent at start, claims at end) instead of inferring from the messy middle, and a
+*self-check* (the reconstructed block must agree with both brackets). The outro is a
+context-fresh summary the compressor **lifts and anchors** rather than reinventing
+cold — so the close-nudge summary should be shaped like a handoff (done/why/next/head
++ candidate anchors), a clean seed in the transcript, not a hand-written block. Not
+circular: the brackets are self-stated, but `orca verify` grounds their anchors
+against git/files (#4), so a session that overclaims at its outro still goes red. **Test:** "is this the current ark's work?" If no → park it, don't do it
 now. *(A strong default, not a hard lock: an urgent interrupt may switch — but
 switching is named, not silent.)* **Mechanism:** orca *nudges* (never forces, per #6)
 "looks done — archive and start fresh" when the ark's `done-when` is checkable and
@@ -96,6 +105,14 @@ becomes a nag, breaking #5/#6):** nudges are *earned* — high precision, low fr
 **reactive** (surfaced only when orca is invoked: `now` / `gate` / Stop-hook /
 resume — never proactive, per #6), and silent when unsure. A nudge that fires wrong or
 too often trains the user to ignore every nudge.
+
+> **The close→open self-check loop.** The close-time runway ("next you'll continue
+> with X") and the next session's where-you-stopped reminder ("you stopped at X") are
+> derived from the *same files* (#1), so they agree **by construction** — orca isn't
+> remembering a promise that could drift, both renders read one source. Close is a
+> *prediction*, open is its *fulfillment*; the user watching them match earns trust
+> and forms the habit, exactly as `orca verify` earns trust on anchors (#4). This is
+> an emergent property of #1 + the nudge, not new machinery (#5).
 
 ---
 
