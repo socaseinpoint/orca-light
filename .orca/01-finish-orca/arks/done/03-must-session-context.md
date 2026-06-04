@@ -15,5 +15,10 @@ updated: 2026-06-04
 
 ## Trail
 <!-- append-only, newest LAST -->
+### 2026-06-04
+done: Built the session-context ledger — `orca session record|pending|compressed` + SessionStart-hook wiring + gitignore + resume-skill + spec, all five done-when met. [commit:1a17b53] [file:bin/orca:985] [test:bash tests/test_session.sh]
+why: One recorded fact (id + exact transcript path + cwd at SessionStart) closes the loss/dup/corruption edges together — cheaper and safer than three separate fixes. Liveness stays a heuristic (transcript mtime, the per-turn heartbeat Claude Code gives for free) because there is no reliable "session ended" signal (Stop fires every turn; hard exits bypass everything) — but everything load-bearing (which set, which path, which project, folded-or-not) is deterministic, so the heuristic only ever errs toward skip-and-warn, never toward silent corruption. Ledger is gitignored: transcripts are per-machine, so the records are ephemeral local state, not history.
+next: ark done. The MUST layer is the last item the readiness review flagged — focus 01-finish-orca is now genuinely a `orca done` candidate. Parked (not MUST): done-when nudge in now/gate, "not started" ark section, orca roadmap view.
+head: 11/11 suites green incl. test_session (13 checks, mtime-controlled). The one thing only a real cross-session run will exercise is liveness timing — ORCA_LIVE_WINDOW=45s is a guess; watch whether a just-closed session ever gets wrongly skipped (safe failure, but annoying) and tune.
 
 ## Log

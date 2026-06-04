@@ -24,14 +24,17 @@ project-local focus-dir model, and all cross-project machinery (registry, `ark-r
 - **side-effects** = the real-world result lives OUTSIDE orca (code repo, Jira, SaaS);
   orca only points at it via `done:` anchors — a domain-agnostic side-effect ledger.
 
-Done-when 1–4 are all met, the legacy ark + global decisions are migrated in, AND
-the docs are refreshed to the new model. Nothing open on this focus — it is a
-candidate for `orca done 01-finish-orca` (the user's call on whether orca is
-"finished" for now).
+Done-when 1–4 met, legacy migrated, docs refreshed, AND the MUST-tier
+continuity-correctness layer is built — the session-context ledger makes resume
+live-aware, set-based, and correctly attributed (closes the loss/dup/corruption
+edges). Nothing MUST-level left open; orca is a genuine `orca done 01-finish-orca`
+candidate. Parked (explicitly not-MUST): done-when nudge in now/gate, a "not started"
+ark section, the future-tense `roadmap` view.
 
 ## arks
 - `arks/done/01-collapse-binary.md` — done — collapsed the binary + skill to git-form.
 - `arks/done/02-docs-refresh.md` — done — rewrote all docs to the focus-dir model.
+- `arks/done/03-must-session-context.md` — done — session-context ledger (live-aware resume).
 - `arks/done/00-verify-resume.md` — done — legacy resume-continuity ark, migrated in.
 
 ## Trail
@@ -78,3 +81,4 @@ head: full suite 10/10 + bench (B2 6/6, B4 6/6, B5 3/3) green on the new model. 
 2026-06-04  01-collapse-binary  → in-work  (first ark of the finish-orca focus)
 2026-06-04  01-collapse-binary  → done
 2026-06-04  02-docs-refresh  → done
+2026-06-04  03-must-session-context  → done
