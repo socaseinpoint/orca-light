@@ -6,7 +6,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 import { arkNote, parseFocus } from "./parse.js";
-import type { Anchor, Ark, Focus, OrcaState, Project, State } from "./types.js";
+import type { Anchor, Ark, Focus, OrcaState, Project, SideEffect, State, TrailBlock } from "./types.js";
 
 const SKIP = new Set([
   "node_modules", ".git", ".venv", "venv", "dist", "build", ".next",
@@ -43,7 +43,7 @@ function findOrcaDirs(root: string, depth = 0, acc: string[] = []): string[] {
   return acc;
 }
 
-function listArks(focusDir: string): Ark[] {
+function listArks(focusDir: string, repo: string): Ark[] {
   const arks: Ark[] = [];
   const add = (dir: string, state: State) => {
     let files: string[] = [];
@@ -53,12 +53,43 @@ function listArks(focusDir: string): Ark[] {
       return;
     }
     for (const f of files) {
-      arks.push({ slug: f.replace(/\.md$/, ""), state, note: arkNote(read(path.join(dir, f))) });
+      const md = read(path.join(dir, f));
+      const p = parseFocus(md); // arks share the focus.md shape (intent + ## Trail)
+      arks.push({
+        slug: f.replace(/\.md$/, ""),
+        state,
+        note: arkNote(md),
+        intent: p.intent,
+        trail: enrichTrail(p.trail, repo),
+      });
     }
   };
   add(path.join(focusDir, "arks"), "in-work");
   add(path.join(focusDir, "arks", "done"), "done");
   return arks;
+}
+
+// Aggregate every anchor across a focus's Trail + all its arks' Trails into a
+// deduped, reachable side-effect index. An anchor buried in a closed ark's Trail
+// surfaces here, labeled by where it came from.
+function aggregateSideEffects(focusTrail: TrailBlock[], arks: Ark[]): SideEffect[] {
+  const byToken = new Map<string, SideEffect>();
+  const absorb = (anchors: Anchor[], source: string) => {
+    for (const a of anchors) {
+      const existing = byToken.get(a.raw);
+      if (existing) {
+        if (!existing.sources.includes(source)) existing.sources.push(source);
+        // promote ok if any source proved it
+        if (existing.ok !== true && a.ok === true) existing.ok = true;
+      } else {
+        byToken.set(a.raw, { type: a.type, raw: a.raw, value: a.value, ok: a.ok, sources: [source] });
+      }
+    }
+  };
+  for (const b of focusTrail) absorb(b.anchors, `trail · ${b.date}`);
+  for (const ark of arks) for (const b of ark.trail) absorb(b.anchors, `ark · ${ark.slug}`);
+  const order = { commit: 0, file: 1, test: 2, unknown: 3 };
+  return [...byToken.values()].sort((x, y) => order[x.type] - order[y.type] || x.value.localeCompare(y.value));
 }
 
 function decisions(focusDir: string): string[] {
@@ -110,16 +141,22 @@ function commitTime(hash: string, repo: string): string {
   }
 }
 
-function loadFocus(focusDir: string, repo: string, state: State): Focus | null {
-  const md = read(path.join(focusDir, "focus.md"));
-  if (!md) return null;
-  const p = parseFocus(md);
-  const trail = p.trail.map((b) => {
+// Check anchors + stamp each block with its first commit's wall-clock time.
+function enrichTrail(blocks: TrailBlock[], repo: string): TrailBlock[] {
+  return blocks.map((b) => {
     const anchors = checkAnchors(b.anchors, repo);
     const firstCommit = anchors.find((a) => a.type === "commit" && a.ok);
     const time = firstCommit ? commitTime(firstCommit.value, repo) : "";
     return { ...b, anchors, time };
   });
+}
+
+function loadFocus(focusDir: string, repo: string, state: State): Focus | null {
+  const md = read(path.join(focusDir, "focus.md"));
+  if (!md) return null;
+  const p = parseFocus(md);
+  const trail = enrichTrail(p.trail, repo);
+  const arks = listArks(focusDir, repo);
   return {
     id: path.basename(focusDir),
     name: p.name,
@@ -128,8 +165,9 @@ function loadFocus(focusDir: string, repo: string, state: State): Focus | null {
     intent: p.intent,
     doneWhen: p.doneWhen,
     now: p.now,
-    arks: listArks(focusDir),
+    arks,
     trail,
+    sideEffects: aggregateSideEffects(trail, arks),
     log: p.log,
     decisions: decisions(focusDir),
     updated: p.updated,

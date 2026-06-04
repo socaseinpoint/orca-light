@@ -111,6 +111,15 @@ code { font-family: var(--mono); font-size: 0.88em; }
 .tl-section-k { font-family: var(--mono); font-size: 0.64rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-faint); margin-bottom: 1rem; }
 .tl-empty { color: var(--ink-faint); font-style: italic; }
 
+/* side-effects index */
+.sfx { margin: 0 0 2.2rem; padding-bottom: 1.8rem; border-bottom: 1px solid var(--line); }
+.sfx-group { display: grid; grid-template-columns: 8.5rem 1fr; gap: 0.8rem; padding: 0.5rem 0; align-items: baseline; }
+.sfx-type { font-family: var(--mono); font-size: 0.72rem; color: var(--accent); white-space: nowrap; }
+.sfx-list { display: flex; flex-direction: column; gap: 0.4rem; min-width: 0; }
+.sfx-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.5rem; }
+.sfx-src { font-family: var(--mono); font-size: 0.64rem; color: var(--ink-faint); }
+@media (max-width: 680px) { .sfx-group { grid-template-columns: 1fr; gap: 0.3rem; } }
+
 /* session chain */
 .tb { display: grid; grid-template-columns: 1.4rem 1fr; }
 .tb-rail { position: relative; display: flex; justify-content: center; }

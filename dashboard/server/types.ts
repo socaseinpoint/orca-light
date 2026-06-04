@@ -29,6 +29,19 @@ export interface Ark {
   slug: string;
   state: State;
   note: string;
+  intent: string;
+  trail: TrailBlock[]; // the ark's own handoff history (anchors live here)
+}
+
+// A derived, deduped pointer to a real outcome outside orca (a commit/file/test
+// anchor). Aggregated across a focus's Trail + all its arks' Trails so anchors
+// buried in a closed ark stay reachable from the focus view.
+export interface SideEffect {
+  type: "commit" | "file" | "test" | "unknown";
+  raw: string;
+  value: string;
+  ok: boolean | null;
+  sources: string[]; // where it appeared: "trail · <date>" or "ark · <slug>"
 }
 
 export interface Focus {
@@ -41,6 +54,7 @@ export interface Focus {
   now: string;
   arks: Ark[];
   trail: TrailBlock[];
+  sideEffects: SideEffect[]; // derived: deduped anchors across focus + arks
   log: LogLine[];
   decisions: string[];
   updated: string;

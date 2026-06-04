@@ -1,5 +1,6 @@
 import type { Focus } from "../types";
 import { StateBadge } from "./Badge";
+import { SideEffects } from "./SideEffects";
 import { TrailBlock } from "./TrailBlock";
 
 // The TIMELINE view: a focus's intent + done-when, then the session chain
@@ -47,6 +48,8 @@ export function Timeline({ focus }: { focus: Focus }) {
           </div>
         )}
       </header>
+
+      <SideEffects items={focus.sideEffects} />
 
       <section className="tl-chain">
         <div className="tl-section-k">session chain · {focus.trail.length}</div>

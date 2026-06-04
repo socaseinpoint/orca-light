@@ -29,6 +29,16 @@ export interface Ark {
   slug: string;
   state: State;
   note: string;
+  intent: string;
+  trail: TrailBlock[];
+}
+
+export interface SideEffect {
+  type: "commit" | "file" | "test" | "unknown";
+  raw: string;
+  value: string;
+  ok: boolean | null;
+  sources: string[];
 }
 
 export interface Focus {
@@ -41,6 +51,7 @@ export interface Focus {
   now: string;
   arks: Ark[];
   trail: TrailBlock[];
+  sideEffects: SideEffect[];
   log: LogLine[];
   decisions: string[];
   updated: string;
