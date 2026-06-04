@@ -628,6 +628,57 @@ def cmd_decide(args):
     return 0
 
 
+STATE_LINE_RE = re.compile(r"^state:\s*(.*)$", re.IGNORECASE)
+
+
+def cmd_archive(args):
+    """Flip an ark's `state:` to archived — the one terminal 'done' flag for a unit
+    of work. Single writer: rewrites only this ark file, only its state line. Arks
+    are what get archived; their `## sessions` blocks stay append-only and untouched
+    (closing the ark is not closing its history). Idempotent — re-archiving is fine.
+    'active' (or no state field) is the only non-terminal state; archived is the end."""
+    root = find_repo_root(os.getcwd())
+    path = os.path.join(root, ".orca", "arks", args.slug + ".md")
+    if not os.path.isfile(path):
+        print(_c(RED, "archive: no such ark: %s (.orca/arks/%s.md)" % (args.slug, args.slug)))
+        return 2
+    with open(path, "r", errors="replace") as fh:
+        lines = fh.readlines()
+
+    new, replaced, in_header = [], False, True
+    for raw in lines:
+        # only the leading field block carries `state:`; stop touching lines once a
+        # `## section` starts, so a stray "state:" inside prose is never rewritten.
+        if in_header and raw.lstrip().startswith("##"):
+            in_header = False
+        if in_header and not replaced:
+            m = STATE_LINE_RE.match(raw)
+            if m:
+                if m.group(1).strip().lower() == "archived":
+                    print(_c(DIM, "archive: '%s' already archived" % args.slug))
+                    return 0
+                new.append("state: archived\n")
+                replaced = True
+                continue
+        new.append(raw)
+
+    if not replaced:
+        # no state field at all -> ark defaulted to active; insert the terminal flag
+        # right after the title heading so the field block stays together.
+        out, inserted = [], False
+        for raw in new:
+            out.append(raw)
+            if not inserted and raw.startswith("#"):
+                out.append("state: archived\n")
+                inserted = True
+        new = out if inserted else (["state: archived\n"] + new)
+
+    with open(path, "w") as fh:
+        fh.writelines(new)
+    print(_c(GREEN, "archived: ") + args.slug)
+    return 0
+
+
 def cmd_now(args):
     """Resume view: goal + open arks + where you stopped + blockers. One view."""
     home = meta_home()
@@ -784,6 +835,10 @@ def main(argv=None):
     d = sub.add_parser("decide", help="append a decision + why to .orca/decisions.md (append-only)")
     d.add_argument("text", nargs="+", help="the decision and its reason, e.g. \"per-axis collision — gives wall-slide for free\"")
     d.set_defaults(func=cmd_decide)
+
+    a = sub.add_parser("archive", help="flip an ark's state to archived (terminal 'done' flag; one writer)")
+    a.add_argument("slug", help="ark slug, i.e. .orca/arks/<slug>.md")
+    a.set_defaults(func=cmd_archive)
 
     g = sub.add_parser("gate", help="exit 1 + reason if the freshest active ark's handoff isn't verified (non-blocking warn)")
     g.add_argument("--timeout", type=int, default=120, help="per-test timeout seconds")
