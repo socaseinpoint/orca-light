@@ -85,5 +85,19 @@ state: active
 EOF
 expect 0 "v1 handoff anchored bullet still PASSes"
 
+# 6. anchors quoted in orient prose (why/next/head) are NOT checked — only done: is
+cat > .orca/arks/a.md <<EOF
+# ark: a
+state: active
+
+## sessions
+### 2026-06-04
+done: real work. [commit:$H]
+why:  session 2 wrote a bad anchor [test:test_does_not_exist] — quoting it must not fail verify
+next: also mentioning [file:nope.py:999] here is fine
+head: and [commit:deadbeef] in prose too
+EOF
+expect 0 "anchors quoted in orient prose are ignored (only done: is verified)"
+
 echo "result: $pass passed, $fail failed"
 [ "$fail" = 0 ]

@@ -236,6 +236,26 @@ def judge_pass(text, root, timeout):
     return ok, lines
 
 
+def proven_lines(text):
+    """Lines in the proven zone — `done:` (v2) and `## handoff` bullets (v1). Anchors
+    are checked ONLY here. Prose in why/next/head/decisions may quote `[test:...]`
+    freely without verify trying to run it (a battle test surfaced this)."""
+    out, zone = [], None
+    for raw in text.splitlines():
+        m = HEADING_RE.match(raw)
+        if m and len(m.group(1)) <= 2:
+            zone = ("handoff" if HANDOFF_HEADING_RE.match(raw)
+                    else "sessions" if SESSIONS_HEADING_RE.match(raw) else None)
+            continue
+        if m:
+            continue
+        if zone == "sessions" and DONE_RE.match(raw):
+            out.append(raw)
+        elif zone == "handoff" and BULLET_RE.match(raw):
+            out.append(raw)
+    return "\n".join(out)
+
+
 def bare_claims(text):
     """Unproven claims in the *proven* zone. Two schemas, one rule — a claim that
     asserts work is done must carry an anchor:
@@ -270,7 +290,7 @@ def bare_claims(text):
 def check_anchors(text, root, no_tests, timeout):
     """Core check. Returns (ok, lines, n_anchors). Pure — no printing.
     lines are (status, message) tuples where status in OK/FAIL/SKIP/BARE/NONE."""
-    anchors = ANCHOR_RE.findall(text)
+    anchors = ANCHOR_RE.findall(proven_lines(text))
     lines, ok = [], True
     if not anchors:
         lines.append(("NONE", "no anchors found — handoff is unproven prose"))
