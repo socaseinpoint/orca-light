@@ -3,8 +3,10 @@
 thread: build-orca-light
 intent: make session handoffs trustworthy, then build the lightest continuity layer on top
 done-when: verify catches every fabrication mode; views render from files; hooks wired
-state: active
+state: archived
 updated: 2026-06-04
+note: done-when met; superseded by verify-resume (verify v2 + judge). day/glance/report
+      since collapsed into `orca now` — do not trust this ark's command names.
 
 ## decisions
 - Trust core is a verifier, not generated prose: the model writes the handoff, a

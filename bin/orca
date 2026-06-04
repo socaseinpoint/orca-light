@@ -35,7 +35,10 @@ import time
 
 ANCHOR_RE = re.compile(r"\[(file|commit|test):([^\]]+)\]")
 HANDOFF_HEADING_RE = re.compile(r"^#{1,6}\s+handoff\b", re.IGNORECASE)
+SESSIONS_HEADING_RE = re.compile(r"^#{1,6}\s+sessions\b", re.IGNORECASE)
+HEADING_RE = re.compile(r"^(#{1,6})\s")
 BULLET_RE = re.compile(r"^\s*[-*]\s+\S")
+DONE_RE = re.compile(r"^\s*done:\s*\S", re.IGNORECASE)  # proven-zone field (schema v2)
 
 GREEN, RED, YELLOW, DIM, RESET = "\033[32m", "\033[31m", "\033[33m", "\033[2m", "\033[0m"
 
@@ -128,15 +131,138 @@ def check_test(payload, root, timeout):
     return True, "exit 0"
 
 
-def bare_claims(text):
-    """Handoff bullets with no anchor = unproven prose. Flag them."""
-    flagged = []
-    in_handoff = False
+# --- claim<->evidence judging: pluggable, OFF by default; deterministic core stays ---
+
+DONE_CLAIM_RE = re.compile(r"^\s*done:\s*(.+)$", re.IGNORECASE)
+
+
+def _truncate(s, n):
+    s = s or ""
+    return s if len(s) <= n else s[:n] + "\n…[truncated]"
+
+
+def evidence_for(kind, payload, root, timeout):
+    """A receipt: the real artifact behind an anchor, rendered as text a judge reads.
+    This is orca's strong, deterministic half — the evidence is reality, not prose."""
+    if kind == "commit":
+        out = subprocess.run(["git", "show", "--stat", "-p", payload.strip()],
+                             cwd=root, capture_output=True, text=True)
+        return _truncate(out.stdout, 3000) if out.returncode == 0 else "(commit not found)"
+    if kind == "file":
+        path, _, line_s = payload.rpartition(":")
+        try:
+            line = int(line_s)
+        except ValueError:
+            return "(bad file anchor)"
+        abs_path = path if os.path.isabs(path) else os.path.join(root, path)
+        if not os.path.isfile(abs_path):
+            return "(file not found)"
+        with open(abs_path, "r", errors="replace") as fh:
+            rows = fh.readlines()
+        lo, hi = max(0, line - 4), min(len(rows), line + 3)
+        return "%s lines %d-%d:\n%s" % (path, lo + 1, hi, _truncate("".join(rows[lo:hi]), 1500))
+    if kind == "test":
+        try:
+            out = subprocess.run(payload.strip(), cwd=root, shell=True,
+                                 capture_output=True, text=True, timeout=timeout)
+        except subprocess.TimeoutExpired:
+            return "(test timed out)"
+        body = (out.stdout or "") + (out.stderr or "")
+        return "exit %d\n%s" % (out.returncode, _truncate(body, 1500))
+    return ""
+
+
+def iter_done_claims(text):
+    """Each provable claim + its anchors: v2 `done:` lines and v1 `## handoff` bullets.
+    The orient zone (why/next/head) is intent — never judged."""
+    claims, zone = [], None
     for raw in text.splitlines():
-        if raw.startswith("#"):
-            in_handoff = bool(HANDOFF_HEADING_RE.match(raw))
+        m = HEADING_RE.match(raw)
+        if m and len(m.group(1)) <= 2:
+            zone = ("handoff" if HANDOFF_HEADING_RE.match(raw)
+                    else "sessions" if SESSIONS_HEADING_RE.match(raw) else None)
             continue
-        if in_handoff and BULLET_RE.match(raw) and not ANCHOR_RE.search(raw):
+        if m:
+            continue
+        anchors = ANCHOR_RE.findall(raw)
+        if not anchors:
+            continue
+        if zone == "sessions":
+            dm = DONE_CLAIM_RE.match(raw)
+            if dm:
+                claims.append((dm.group(1).strip(), anchors))
+        elif zone == "handoff" and BULLET_RE.match(raw):
+            claims.append((raw.strip().lstrip("-* ").strip(), anchors))
+    return claims
+
+
+def judge_claim(claim, evidence, timeout):
+    """Ask a SEPARATE cheap model whether the evidence substantiates the claim.
+    The handoff's writer must not grade itself — fresh model, skeptical by default.
+    Pluggable via ORCA_JUDGE_CMD (default: Claude Haiku). Unavailable judge =
+    skipped (grounded), so the deterministic core never depends on it."""
+    cmd = os.environ.get("ORCA_JUDGE_CMD", "claude -p --model claude-haiku-4-5")
+    prompt = (
+        "You are a STRICT grader. Decide if the EVIDENCE substantiates the CLAIM.\n"
+        "The evidence is real (git/files/tests). Be skeptical: if it does not clearly\n"
+        "show the claimed work, answer NO. A passing test or an existing commit that is\n"
+        "UNRELATED to the claim is NOT support.\n"
+        "First word must be YES or NO, then one short reason.\n\n"
+        "CLAIM: %s\n\nEVIDENCE:\n%s\n" % (claim, evidence)
+    )
+    try:
+        out = subprocess.run(cmd, shell=True, input=prompt,
+                             capture_output=True, text=True, timeout=timeout)
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        return True, "judge unavailable (skipped)"
+    resp = (out.stdout or "").strip()
+    if out.returncode != 0 or not resp:
+        return True, "judge unavailable (skipped)"
+    words = resp.split()
+    grounded = not words[0].upper().strip(".:,").startswith("NO")
+    reason = " ".join(words[1:])[:100] if len(words) > 1 else resp[:100]
+    return grounded, reason
+
+
+def judge_pass(text, root, timeout):
+    """Returns (ok, lines) — UNGROUND for each done: claim the judge can't substantiate."""
+    lines, ok = [], True
+    for claim, anchors in iter_done_claims(text):
+        evidence = "\n---\n".join(evidence_for(k, p, root, timeout) for k, p in anchors)
+        grounded, reason = judge_claim(claim, evidence, timeout)
+        lines.append((("GROUND" if grounded else "UNGROUND"),
+                      "%s — %s" % (claim[:60], reason)))
+        ok = ok and grounded
+    return ok, lines
+
+
+def bare_claims(text):
+    """Unproven claims in the *proven* zone. Two schemas, one rule — a claim that
+    asserts work is done must carry an anchor:
+      v1  `## handoff`  -> every bullet needs an anchor
+      v2  `## sessions` -> every `done:` line needs an anchor; `why:/next:/head:`
+                           are the orient zone (narrative) and are never flagged.
+    A `###` date subheading inside `## sessions` does not close the zone; only a
+    new top-level (`#`/`##`) heading does."""
+    flagged = []
+    zone = None  # "handoff" | "sessions" | None
+    for raw in text.splitlines():
+        m = HEADING_RE.match(raw)
+        if m and len(m.group(1)) <= 2:  # top-level section heading -> may switch zone
+            if HANDOFF_HEADING_RE.match(raw):
+                zone = "handoff"
+            elif SESSIONS_HEADING_RE.match(raw):
+                zone = "sessions"
+            else:
+                zone = None
+            continue
+        if m:  # deeper heading (### session date) -> keep current zone
+            continue
+        if ANCHOR_RE.search(raw):
+            continue
+        if zone == "handoff" and BULLET_RE.match(raw):
+            flagged.append(raw.strip())
+        elif zone == "sessions" and DONE_RE.match(raw):
             flagged.append(raw.strip())
     return flagged
 
@@ -167,7 +293,8 @@ def check_anchors(text, root, no_tests, timeout):
 
 
 _TAG = {"OK": (GREEN, " OK "), "FAIL": (RED, "FAIL"), "SKIP": (YELLOW, "SKIP"),
-        "BARE": (YELLOW, "BARE"), "NONE": (YELLOW, "----")}
+        "BARE": (YELLOW, "BARE"), "NONE": (YELLOW, "----"),
+        "GROUND": (GREEN, "GRND"), "UNGROUND": (RED, "UNGR")}
 
 
 def cmd_verify(args):
@@ -185,6 +312,10 @@ def cmd_verify(args):
 
     print(_c(DIM, "ark: %s  (root: %s)" % (os.path.relpath(path, root), root)))
     ok, lines, _ = check_anchors(text, root, args.no_tests, args.timeout)
+    if getattr(args, "judge", False):
+        j_ok, j_lines = judge_pass(text, root, args.timeout)
+        lines = lines + j_lines
+        ok = ok and j_ok
     for status, msg in lines:
         color, tag = _TAG[status]
         if status == "NONE":
@@ -289,6 +420,41 @@ def has_blocker(ark):
     return "blocker" in hay or "blocked" in hay
 
 
+def unflushed_commits(root, ark_text):
+    """Commits on HEAD newer than the latest one this handoff anchors.
+
+    Content-based staleness (not mtime — mtime lies after a checkout or a stray
+    editor touch). If work was committed *after* the handoff last referenced a
+    commit, the handoff is behind: a hard exit (Ctrl-C / crash) bypasses the Stop
+    hook, so the flush that would have caught up never ran. We cannot recover an
+    unwritten flush, but we can refuse to let the next session believe a stale
+    handoff is current — same contract as `verify`: make the gap visible.
+
+    Returns (count, head_short, capped). count 0 = current or undeterminable.
+    Walks at most WINDOW commits back; `capped` is True if we hit the wall
+    without finding an anchored commit (handoff anchors none, or is very old)."""
+    WINDOW = 50
+    try:
+        out = subprocess.run(
+            ["git", "rev-list", "-n", str(WINDOW), "HEAD"],
+            cwd=root, capture_output=True, text=True,
+        )
+    except FileNotFoundError:
+        return 0, None, False
+    if out.returncode != 0:
+        return 0, None, False
+    hashes = out.stdout.split()
+    if not hashes:
+        return 0, None, False
+    anchored = [m.strip() for k, m in ANCHOR_RE.findall(ark_text) if k == "commit"]
+    count = 0
+    for h in hashes:
+        if any(h.startswith(a) or a.startswith(h[:7]) for a in anchored if a):
+            return count, hashes[0][:12], False
+        count += 1
+    return count, hashes[0][:12], True  # no anchored commit found within the window
+
+
 def ago(ts):
     d = max(0, time.time() - ts)
     if d < 3600:
@@ -344,16 +510,56 @@ def cmd_init(args):
     return 0
 
 
-def _ark_line(a, indent):
-    """One ark: done-when, where you stopped (last handoff bullet), blocker flag."""
-    hand = section_bullets(a["text"], "handoff")
-    stopped = hand[-1] if hand else "(no handoff yet)"
+def latest_session(text):
+    """Fields of the freshest `### ` block under `## sessions` (schema v2), else {}.
+    Newest block is first; we read only it. Returns dict of done/why/next/head."""
+    in_sessions, started, block = False, False, {}
+    for raw in text.splitlines():
+        m = HEADING_RE.match(raw)
+        if m and len(m.group(1)) <= 2:
+            in_sessions = bool(SESSIONS_HEADING_RE.match(raw))
+            continue
+        if not in_sessions:
+            continue
+        if m:  # ### date subheading
+            if started:
+                break  # only the freshest block
+            started = True
+            continue
+        if started:
+            fm = re.match(r"^\s*(done|why|next|head):\s*(.+)$", raw, re.IGNORECASE)
+            if fm:
+                block[fm.group(1).lower()] = fm.group(2).strip()
+    return block
+
+
+def _ark_line(a, indent, root):
+    """One ark: done-when, where you stopped, mental thread, blocker flag, and a
+    staleness warning if commits landed after the last anchored handoff. Prefers
+    schema v2 session blocks (next/head); falls back to v1 handoff bullets."""
+    sess = latest_session(a["text"])
+    if sess:
+        stopped = sess.get("next") or sess.get("done") or "(session has no next)"
+        head = sess.get("head")
+    else:
+        hand = section_bullets(a["text"], "handoff")
+        stopped = hand[-1] if hand else "(no handoff yet)"
+        head = None
     flag = _c(RED, " ⚠ blocker") if has_blocker(a) else ""
     print("%s· %s%s  %s"
           % (indent, a["slug"], flag,
              _c(DIM, "done-when: " + a["fields"].get("done-when", "—"))))
     print("%s    %s %s"
           % (indent, _c(DIM, "↳ stopped:"), _c(DIM, stopped)))
+    if head:
+        print("%s    %s %s" % (indent, _c(DIM, "↳ head:   "), _c(DIM, head)))
+    n, head_hash, capped = unflushed_commits(root, a["text"])
+    if n > 0:
+        plural = "" if n == 1 else "s"
+        print("%s    %s"
+              % (indent, _c(YELLOW, "⚠ %d%s commit%s after last anchored handoff (HEAD %s) — "
+                            "handoff may be behind; reconcile before continuing"
+                            % (n, "+" if capped else "", plural, head_hash))))
 
 
 def cmd_decide(args):
@@ -398,14 +604,14 @@ def cmd_now(args):
         print("    goal: %s" % t["fields"].get("goal", "—"))
         for a in [x for x in open_arks if x["fields"].get("thread", "") == t["slug"]]:
             claimed.add(a["slug"])
-            _ark_line(a, "    ")
+            _ark_line(a, "    ", root)
 
     loose = [a for a in open_arks if a["slug"] not in claimed]
     if loose:
         if threads:
             print("\n%s loose arks (no thread)" % _c(YELLOW, "▸"))
         for a in loose:
-            _ark_line(a, "  ")
+            _ark_line(a, "  ", root)
     return 0
 
 
@@ -418,6 +624,9 @@ def main(argv=None):
     v.add_argument("arkfile", nargs="?", help="ark file (default: freshest under .orca/arks/)")
     v.add_argument("--no-tests", action="store_true", help="skip re-running [test:] anchors")
     v.add_argument("--timeout", type=int, default=120, help="per-test timeout seconds")
+    v.add_argument("--judge", action="store_true",
+                   help="also ask a separate cheap model if each done: claim is grounded "
+                        "in its evidence (pluggable via ORCA_JUDGE_CMD; off by default)")
     v.set_defaults(func=cmd_verify)
 
     sub.add_parser("init", help="scaffold meta-tier ~/.orca and project .orca").set_defaults(func=cmd_init)
