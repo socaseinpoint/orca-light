@@ -1,0 +1,181 @@
+---
+name: orca-resume
+description: Resume a project with trusted, owned cross-session continuity. On sit-down at session start, shows the open arks and forks — continue an active ark, archive a finished one and start fresh, or start new. On "continue" it dispatches a subagent that reads the PRIOR session transcript + git log and compresses them into ONE verified 4-layer block (done with anchors / why / next / head), appends it to the ark, and runs `orca verify`. Invoke when the user says "resume", "продолжим", "where was I", "orca resume", "pick up where I left off", or sits down to work on an orca-tracked project.
+argument-hint: "[ark slug to continue, optional]"
+user-invocable: true
+disable-model-invocation: false
+allowed-tools: Bash, Read, Task, AskUserQuestion
+---
+
+# orca-resume — stop doing handoffs by hand
+
+This skill reconstructs continuity you didn't write down. The prior session's
+transcript is on disk no matter how that session ended (clean exit, Ctrl-C, or a
+crash that bypassed every hook). We read *that* — not a flush someone had to
+remember — and compress it into one verified block at the head of the active ark.
+
+The contract that makes it trustworthy: the `done:` layer carries checkable
+**anchors** and is re-checked by `orca verify`; the `why/next/head` layers are
+labeled narrative, never pretended to be proven. Facts checked, story labeled.
+
+> Read `spec/resume.md` in the orca-light repo for the full design rationale.
+
+## Invariants you must not break
+
+- **Files are state.** You only ever *append* a session block; never rewrite or
+  delete existing blocks. Closing work = `orca archive` (the ark), never editing
+  history.
+- **One writer per file.** You are the sole writer of the ark you append to in
+  this run. Don't touch other arks.
+- **Views derived on read.** Never cache "which ark is active" — ask `orca now`.
+- **No timers/locks/background.** This runs because the user invoked it. It may
+  ask and wait; a hook cannot.
+
+## Step 0 — learn the LIVE command surface (anti-staleness)
+
+The command set drifts, and old commands get collapsed away. **Never hardcode it
+from memory** — commands you "remember" may no longer exist. Always discover it
+fresh:
+
+```bash
+orca --help
+```
+
+Carry that output forward — especially into the subagent prompt — so every
+`[test:...]` anchor it emits names a command that actually exists today. As of
+this writing the surface is: `now · verify [--judge] [--no-tests] · report
+[--since Nd] · decide · trail · archive · init · gate`. If `--help` disagrees with
+that list, **`--help` wins.**
+
+Also confirm `orca` is on PATH (the battle test caught it missing):
+
+```bash
+command -v orca || echo "orca NOT on PATH — fix before continuing"
+```
+
+## Step 1 — focus fork
+
+Run the resume view to see what's open:
+
+```bash
+orca now
+```
+
+**If you were launched from a parent directory** (not the project root), `orca now`
+greets with thread goals, not the specific ark. Roll up the right project/ark via
+the registry instead:
+
+```bash
+orca report --since 14d   # cross-project log; find the project + ark slug you mean
+```
+
+Then `cd` into that project root (the dir whose `.orca/arks/<slug>.md` you want)
+so the rest of the commands resolve against it.
+
+Now present the fork to the user with `AskUserQuestion` (or honor the slug passed
+as an argument). Three branches:
+
+1. **Continue an active ark** → Step 2.
+2. **Archive a finished ark, then start new** → `orca archive <done-slug>`, then Step 3.
+3. **Start a new ark** → Step 3.
+
+If exactly one ark is active and the user clearly means it, you may skip the
+question and go straight to Step 2 — but say which ark you picked.
+
+## Step 2 — continue: dispatch the compression subagent
+
+The prior transcript is large; it must **never enter this main context window**.
+Dispatch a subagent (Task tool, `general-purpose`) to read it and return ~200
+tokens. Resolve these first and bake them into the prompt:
+
+- **Project root** — `git rev-parse --show-toplevel` (or the `.orca`-bearing dir).
+- **Transcript dir** — Claude Code stores per-project transcripts at
+  `~/.claude/projects/<slug>/`, where `<slug>` is the project's absolute path with
+  every `/` (and `.`) replaced by `-`. Compute it:
+  ```bash
+  printf '%s\n' "$(pwd)" | sed 's/[/.]/-/g'   # -> e.g. -Users-you-Documents-projects-foo
+  ```
+  The transcripts are `*.jsonl` there, newest by mtime. The **current** session is
+  the freshest file (being written now); the **prior** session is the next-freshest.
+- **Last anchored commit** — the newest `[commit:HASH]` in the ark's freshest
+  `done:` line, so the subagent only diffs work since then (`git log <HASH>..HEAD`).
+- **Live command surface** — paste the `orca --help` output from Step 0.
+
+Dispatch with a prompt shaped like this (fill the braces):
+
+```
+You are compressing one prior coding session into a single orca session block.
+DO NOT return the transcript or large excerpts — return ONLY the block below.
+
+Project root: {ROOT}
+Prior transcript: the newest *.jsonl in {TRANSCRIPT_DIR} EXCLUDING the current
+  session file {CURRENT_JSONL} (it's the one still being written). Pick by mtime.
+Work since last handoff: run `git -C {ROOT} log --oneline {LAST_HASH}..HEAD`
+  and `git -C {ROOT} log -p {LAST_HASH}..HEAD` to see real commits.
+
+Read the transcript + git log. Produce ONE markdown block, nothing else:
+
+### {TODAY}
+done: <what was actually accomplished>. <anchors>
+why:  <the rationale behind the calls made — reconstructed from the transcript>
+next: <the single next step that was about to be taken>
+head: <what was in flight: open hypotheses, what was stuck, what to watch>
+
+Anchor rules (the done: line is the PROVEN zone — it MUST carry >=1 anchor):
+  [commit:HASH]  a real commit from the git log above
+  [file:PATH:LINE]  a file that exists with at least LINE lines
+  [test:CMD]  a command that exits 0 — use ONLY commands from this live surface:
+{ORCA_HELP}
+  (the project's own test runner, e.g. `bash tests/run.sh`, is also fine if real)
+Do NOT invent anchors. If you cannot anchor a claim, weaken the claim until the
+evidence supports it. why/next/head are free narrative — no anchors needed.
+
+Also: if the transcript shows a non-obvious DECISION that isn't already in
+.orca/decisions.md, append one line of `orca decide "<decision> — <why>"` text
+as a P.S. so the human can log it.
+```
+
+The subagent returns the block (and maybe a decision suggestion). It does not
+write files — **you** do.
+
+## Step 3 / append + verify (the only write)
+
+For **continue**: insert the returned block at the TOP of the ark's `## sessions`
+section (newest-first ordering — `orca now`/`trail` depend on it). Append, never
+reorder existing blocks. Then prove it:
+
+```bash
+orca verify .orca/arks/<slug>.md            # checks the done: anchors against reality
+orca verify .orca/arks/<slug>.md --judge    # optional: cheap model grades claim<->evidence
+```
+
+If verify FAILs, the block over-claimed — fix the `done:` line (weaken the claim
+or correct the anchor) and re-verify. Never ship a red block. Then print the block
+back to the user as their re-orientation, and surface any `orca decide` the
+subagent suggested (run it only on the user's nod).
+
+For **new ark**: scaffold `.orca/arks/<slug>.md`:
+
+```markdown
+# ark: <slug>
+
+thread: <thread-name>
+intent: <one line — why this work exists>
+done-when: <observable criterion>
+state: active
+updated: <YYYY-MM-DD>
+
+## decisions
+
+## sessions
+```
+
+(`orca init` first if `.orca/` doesn't exist yet.) Confirm the thread name with the
+user if unsure.
+
+## Done-state, not lifecycle
+
+There is no `planned→doing→done` field. An ark is `state: active` until the work is
+finished, then `orca archive <slug>` (terminal). Sessions are append-only events —
+they are never "closed", only accumulated; only the *ark* is archived. Re-read the
+whole arc any time with `orca trail <slug>`.

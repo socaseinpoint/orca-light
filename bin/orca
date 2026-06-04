@@ -572,10 +572,33 @@ def latest_session(text):
     return block
 
 
+def _all_open_arks(home, cwd_root):
+    """Active arks across every registered project (+ cwd's project if unregistered),
+    each tagged with its own project root. Makes `orca now` location-independent —
+    the same full picture whether you launch from a project or its parent. No more
+    'which directory do I run this from'."""
+    roots = list(registered_projects(home))
+    is_meta = os.path.abspath(os.path.join(cwd_root, ".orca")) == os.path.abspath(home)
+    if (not is_meta and os.path.isdir(os.path.join(cwd_root, ".orca", "arks"))
+            and cwd_root not in roots):
+        roots.append(cwd_root)
+    arks = []
+    for r in roots:
+        for a in iter_arks(r):
+            if is_open(a):
+                a = dict(a)
+                a["_root"], a["_proj"] = r, os.path.basename(r)
+                arks.append(a)
+    arks.sort(key=lambda d: d["mtime"], reverse=True)
+    return arks
+
+
 def _ark_line(a, indent, root):
     """One ark: done-when, where you stopped, mental thread, blocker flag, and a
     staleness warning if commits landed after the last anchored handoff. Prefers
-    schema v2 session blocks (next/head); falls back to v1 handoff bullets."""
+    schema v2 session blocks (next/head); falls back to v1 handoff bullets.
+    Uses the ark's own project root (a['_root']) when set, so cross-project rollup
+    checks staleness against the right repo."""
     sess = latest_session(a["text"])
     if sess:
         stopped = sess.get("next") or sess.get("done") or "(session has no next)"
@@ -584,9 +607,11 @@ def _ark_line(a, indent, root):
         hand = section_bullets(a["text"], "handoff")
         stopped = hand[-1] if hand else "(no handoff yet)"
         head = None
+    root = a.get("_root", root)
     flag = _c(RED, " ⚠ blocker") if has_blocker(a) else ""
+    label = ("%s/%s" % (a["_proj"], a["slug"])) if a.get("_proj") else a["slug"]
     print("%s· %s%s  %s"
-          % (indent, a["slug"], flag,
+          % (indent, label, flag,
              _c(DIM, "done-when: " + a["fields"].get("done-when", "—"))))
     print("%s    %s %s"
           % (indent, _c(DIM, "↳ stopped:"), _c(DIM, stopped)))
@@ -680,13 +705,16 @@ def cmd_archive(args):
 
 
 def cmd_now(args):
-    """Resume view: goal + open arks + where you stopped + blockers. One view."""
+    """Resume view: goal + open arks + where you stopped + blockers. One view.
+    Location-independent: rolls up active arks across ALL registered projects, so
+    the same picture appears whether you launch from a project or its parent —
+    no 'which directory do I run this from'."""
     home = meta_home()
     root = find_repo_root(os.getcwd())
     threads = iter_threads(home)
-    open_arks = [a for a in iter_arks(root) if is_open(a)]
+    open_arks = _all_open_arks(home, root)
 
-    print(_c(DIM, "orca now  ·  %s" % os.path.basename(root)))
+    print(_c(DIM, "orca now"))
     if not threads and not open_arks:
         print(_c(DIM, "  nothing open. `orca init` then add .orca/arks/<slug>.md"))
         return 0
@@ -696,10 +724,10 @@ def cmd_now(args):
         print("\n%s %s  %s" % (_c(YELLOW, "▸"), t["slug"], _c(DIM, ago(t["mtime"]))))
         print("    goal: %s" % t["fields"].get("goal", "—"))
         for a in [x for x in open_arks if x["fields"].get("thread", "") == t["slug"]]:
-            claimed.add(a["slug"])
+            claimed.add(a["path"])
             _ark_line(a, "    ", root)
 
-    loose = [a for a in open_arks if a["slug"] not in claimed]
+    loose = [a for a in open_arks if a["path"] not in claimed]
     if loose:
         if threads:
             print("\n%s loose arks (no thread)" % _c(YELLOW, "▸"))
