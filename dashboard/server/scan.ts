@@ -72,6 +72,15 @@ function listArks(focusDir: string, repo: string): Ark[] {
 // Aggregate every anchor across a focus's Trail + all its arks' Trails into a
 // deduped, reachable side-effect index. An anchor buried in a closed ark's Trail
 // surfaces here, labeled by where it came from.
+// Bare http(s) URLs anywhere in a block's prose. Harvested as derived "link"
+// side-effects — published artifacts orca's checkable anchors can't hold. Trailing
+// punctuation is trimmed so "see https://x.io/." doesn't keep the dot.
+const URL_RE = /https?:\/\/[^\s)\]<>"']+/g;
+function blockUrls(b: TrailBlock): string[] {
+  const text = `${b.done} ${b.why} ${b.next} ${b.head}`;
+  return [...text.matchAll(URL_RE)].map((m) => m[0].replace(/[.,;:]+$/, ""));
+}
+
 function aggregateSideEffects(focusTrail: TrailBlock[], arks: Ark[]): SideEffect[] {
   const byToken = new Map<string, SideEffect>();
   const absorb = (anchors: Anchor[], source: string) => {
@@ -86,9 +95,27 @@ function aggregateSideEffects(focusTrail: TrailBlock[], arks: Ark[]): SideEffect
       }
     }
   };
-  for (const b of focusTrail) absorb(b.anchors, `trail · ${b.date}`);
-  for (const ark of arks) for (const b of ark.trail) absorb(b.anchors, `ark · ${ark.slug}`);
-  const order = { commit: 0, file: 1, test: 2, unknown: 3 };
+  const absorbLinks = (urls: string[], source: string) => {
+    for (const u of urls) {
+      const key = `link:${u}`;
+      const existing = byToken.get(key);
+      if (existing) {
+        if (!existing.sources.includes(source)) existing.sources.push(source);
+      } else {
+        byToken.set(key, { type: "link", raw: key, value: u, ok: null, sources: [source] });
+      }
+    }
+  };
+  for (const b of focusTrail) {
+    absorb(b.anchors, `trail · ${b.date}`);
+    absorbLinks(blockUrls(b), `trail · ${b.date}`);
+  }
+  for (const ark of arks)
+    for (const b of ark.trail) {
+      absorb(b.anchors, `ark · ${ark.slug}`);
+      absorbLinks(blockUrls(b), `ark · ${ark.slug}`);
+    }
+  const order = { commit: 0, file: 1, test: 2, link: 3, unknown: 4 };
   return [...byToken.values()].sort((x, y) => order[x.type] - order[y.type] || x.value.localeCompare(y.value));
 }
 

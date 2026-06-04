@@ -34,7 +34,7 @@ export interface Ark {
 }
 
 export interface SideEffect {
-  type: "commit" | "file" | "test" | "unknown";
+  type: "commit" | "file" | "test" | "link" | "unknown";
   raw: string;
   value: string;
   ok: boolean | null;

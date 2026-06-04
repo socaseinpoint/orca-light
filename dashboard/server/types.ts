@@ -36,8 +36,11 @@ export interface Ark {
 // A derived, deduped pointer to a real outcome outside orca (a commit/file/test
 // anchor). Aggregated across a focus's Trail + all its arks' Trails so anchors
 // buried in a closed ark stay reachable from the focus view.
+// "link" is a derived, dashboard-only side-effect type — a published/external URL
+// harvested from Trail text. It is NOT an orca anchor (core ANCHOR_RE stays
+// file|commit|test); it carries no verify status (ok=null, a pure pointer).
 export interface SideEffect {
-  type: "commit" | "file" | "test" | "unknown";
+  type: "commit" | "file" | "test" | "link" | "unknown";
   raw: string;
   value: string;
   ok: boolean | null;
