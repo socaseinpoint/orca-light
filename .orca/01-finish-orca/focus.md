@@ -76,6 +76,12 @@ why: Closing the loop in-session proves the new commands work end to end, not ju
 next: focus 01-finish-orca has met done-when 1–4 with tooling + docs current — it is a candidate for `orca done 01-finish-orca`. Left in-work pending the user's call on whether orca is "finished" for now. Parked candidate: an external cross-project overview that scans many repos' `.orca/` dirs (orca core stays project-local).
 head: full suite 10/10 + bench (B2 6/6, B4 6/6, B5 3/3) green on the new model. The latest-block verify rule is the one behavior to watch as Trails accumulate across sessions; commit anchors are the durable choice.
 
+### 2026-06-04 — MUST-tier built, orca is done-state ready
+done: Built the session-context ledger (ark 03, done) — `orca session record|pending|compressed`, SessionStart-hook wiring, resume-skill + spec, gitignore. Resume is now live-aware (refuses in-progress transcripts), set-based (folds every uncompressed session once), and correctly attributed (exact recorded path, cwd project-scoping). [commit:c4a9afd] [file:bin/orca:985] [test:bash tests/test_session.sh]
+why: This was the one item the readiness review flagged as MUST-but-unbuilt — the collapse fixed topology, not the parallel-session corruption / loss / dup edges. The "record one fact at SessionStart" design (decision #19) closes all three with the least machinery: deterministic on the load-bearing parts (which set / path / project / folded), heuristic only on liveness (transcript mtime), so it errs toward skip-and-warn, never silent corruption. Ledger is gitignored — transcripts are per-machine, the records ephemeral.
+next: orca has met every done-when and built every MUST item — `orca done 01-finish-orca` is the honest next move (user's call). Remaining work is all parked/non-MUST (done-when nudge, "not started" section, roadmap view) — candidates for a fresh focus, and one genuinely-unexercised path: a real cross-session resume run to tune ORCA_LIVE_WINDOW.
+head: 11/11 suites green incl. test_session (13 mtime-controlled checks). Only liveness timing is unproven in the wild — a just-closed session could be wrongly skipped (safe, but annoying); watch and tune the 45s window. Everything else is deterministic + tested.
+
 ## Log
 <!-- ark state transitions, append-only -->
 2026-06-04  01-collapse-binary  → in-work  (first ark of the finish-orca focus)
