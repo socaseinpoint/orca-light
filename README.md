@@ -8,7 +8,7 @@ Standalone repo. It does **not** depend on ECC code — it only borrows conventi
 arcs, decisions (why), and the trusted handoff between sessions.
 
 **New here?** See [GUIDE.md](GUIDE.md) — install → init → a narrated walkthrough of
-the whole flow.
+the whole flow. The standing design lenses live in [PRINCIPLES.md](PRINCIPLES.md).
 
 ## The one idea: files are state, views are derived
 
