@@ -68,11 +68,31 @@ revisited (the explicit trigger for an inbox / questions-queue).
 A session works one ark. Tangents that surface are **parked** (a bare ark — intent +
 done-when, no sessions), not pursued mid-session. Switching tasks is an *explicit*
 act (new ark / new session), the path of least resistance is to stay focused.
-**Why:** keeps the session from bloating, and it's load-bearing — a session maps to
-exactly one ark by construction, which defines away the cross-ark attribution/demux
-problem instead of solving it with machinery. **Test:** "is this the current ark's
-work?" If no → park it, don't do it now. *(A strong default, not a hard lock: an
-urgent interrupt may switch — but switching is named, not silent.)*
+**Why:** three reinforcing reasons. (1) keeps the session from bloating. (2)
+load-bearing — a session maps to exactly one ark by construction, which defines away
+the cross-ark attribution/demux problem instead of solving it with machinery. (3)
+**compression fidelity** — a small session is a small transcript, so resume's
+reconstruction has less to compress and drops less; bloated sessions lose detail at
+the squeeze. **Test:** "is this the current ark's work?" If no → park it, don't do it
+now. *(A strong default, not a hard lock: an urgent interrupt may switch — but
+switching is named, not silent.)* **Mechanism:** orca *nudges* (never forces, per #6)
+"looks done — archive and start fresh" when the ark's `done-when` is checkable and
+green; stays silent when `done-when` can't be checked (no false nags, per #5).
+
+## 8. orca teaches its own model — nudge correct use, don't just store files
+
+orca understands its own idea and gently steers the user toward it. Its surfaces are
+didactic by design: the fork (continue / archive+new / new) teaches the lifecycle;
+`now`'s "where you stopped" models correct continuation; a red `verify` teaches
+trust-before-convenience; the done-when nudge teaches one-session-one-task. A passive
+filestore lets the user drift; orca makes the right move the obvious one. **Why:** the
+principles only pay off if they're actually followed, and a human won't memorize them
+— the tool should embody them at the moment of use. **Test:** at each invocation
+checkpoint, does the output make the correct next move *obvious*? **Riders (or it
+becomes a nag, breaking #5/#6):** nudges are *earned* — high precision, low frequency,
+**reactive** (surfaced only when orca is invoked: `now` / `gate` / Stop-hook /
+resume — never proactive, per #6), and silent when unsure. A nudge that fires wrong or
+too often trains the user to ignore every nudge.
 
 ---
 
