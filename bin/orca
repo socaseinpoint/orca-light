@@ -509,6 +509,18 @@ def cmd_init(args):
                      % os.path.basename(root))
         made.append(pdec)
 
+    # register this project root so `orca report` can roll up across all projects.
+    # Append-only, one writer, deduped on read — no mutable index to desync.
+    reg = os.path.join(home, "projects")
+    existing = set()
+    if os.path.isfile(reg):
+        with open(reg) as fh:
+            existing = set(l.strip() for l in fh)
+    if root not in existing:
+        with open(reg, "a") as fh:
+            fh.write(root + "\n")
+        made.append(reg + " (registered %s)" % os.path.basename(root))
+
     if made:
         for m in made:
             print("  %s %s" % (_c(GREEN, "+"), m))
@@ -625,6 +637,108 @@ def cmd_now(args):
     return 0
 
 
+def all_sessions(text):
+    """Every `### ` block under `## sessions`, newest first: date + done/why/next/head.
+    Multiple done: lines in a block are joined. This is the raw activity log."""
+    blocks, cur, in_sessions = [], None, False
+    for raw in text.splitlines():
+        m = HEADING_RE.match(raw)
+        if m and len(m.group(1)) <= 2:
+            if cur:
+                blocks.append(cur)
+                cur = None
+            in_sessions = bool(SESSIONS_HEADING_RE.match(raw))
+            continue
+        if not in_sessions:
+            continue
+        if m:  # ### date subheading -> new block
+            if cur:
+                blocks.append(cur)
+            dm = re.match(r"^#{3,6}\s+(.+)$", raw)
+            cur = {"date": dm.group(1).strip() if dm else "?"}
+            continue
+        if cur is not None:
+            fm = re.match(r"^\s*(done|why|next|head):\s*(.+)$", raw, re.IGNORECASE)
+            if fm:
+                k, v = fm.group(1).lower(), fm.group(2).strip()
+                cur[k] = (cur[k] + "; " + v) if cur.get(k) else v
+    if cur:
+        blocks.append(cur)
+    return blocks
+
+
+def registered_projects(home):
+    """Project roots from the append-only registry, deduped, only those still present."""
+    path = os.path.join(home, "projects")
+    if not os.path.isfile(path):
+        return []
+    seen, out = set(), []
+    with open(path) as fh:
+        for line in fh:
+            p = line.strip()
+            if not p or p in seen:
+                continue
+            if os.path.isdir(os.path.join(p, ".orca", "arks")):
+                seen.add(p)
+                out.append(p)
+    return out
+
+
+def cmd_report(args):
+    """Cross-project activity log: what you did, where, when — rolled up from the
+    dated session blocks of every registered project's arks. Derived on read."""
+    home = meta_home()
+    projects = registered_projects(home)
+    root = find_repo_root(os.getcwd())
+    is_meta = os.path.abspath(os.path.join(root, ".orca")) == os.path.abspath(home)
+    if (not is_meta and os.path.isdir(os.path.join(root, ".orca", "arks"))
+            and root not in projects):
+        projects.append(root)
+
+    cutoff = None
+    if args.since:
+        m = re.match(r"^(\d+)d$", args.since)
+        if m:
+            cutoff = time.strftime("%Y-%m-%d",
+                                   time.localtime(time.time() - int(m.group(1)) * 86400))
+
+    rows = []  # (date, project, thread, slug, done, next, blocker)
+    for proj in projects:
+        pname = os.path.basename(proj)
+        for ark in _load_docs(os.path.join(proj, ".orca", "arks")):
+            thread = ark["fields"].get("thread", "—")
+            blk = has_blocker(ark)
+            for b in all_sessions(ark["text"]):
+                d = b.get("date", "?")
+                if cutoff and re.match(r"^\d{4}-\d{2}-\d{2}$", d) and d < cutoff:
+                    continue
+                rows.append((d, pname, thread, ark["slug"],
+                             b.get("done", ""), b.get("next", ""), blk))
+
+    if not projects:
+        print(_c(DIM, "report: no projects registered. run `orca init` in each project."))
+        return 0
+    rows.sort(key=lambda r: r[0], reverse=True)
+    span = (" since %s" % args.since) if args.since else ""
+    print(_c(DIM, "orca report  ·  %d project(s)%s" % (len(projects), span)))
+    if not rows:
+        print(_c(DIM, "  no session activity%s" % span))
+        return 0
+    last = None
+    for date, pname, thread, slug, done, nxt, blk in rows:
+        if date != last:
+            print("\n%s %s" % (_c(YELLOW, "──"), date))
+            last = date
+        flag = _c(RED, " ⚠") if blk else ""
+        print("  %s%s  %s" % (_c(DIM, "[%s]" % thread), flag,
+                              "%s/%s" % (pname, slug)))
+        if done:
+            print("      %s %s" % (_c(GREEN, "done:"), done[:110]))
+        if nxt:
+            print("      %s %s" % (_c(DIM, "next:"), _c(DIM, nxt[:110])))
+    return 0
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(prog="orca", description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -642,6 +756,10 @@ def main(argv=None):
     sub.add_parser("init", help="scaffold meta-tier ~/.orca and project .orca").set_defaults(func=cmd_init)
 
     sub.add_parser("now", help="resume view: goal + open arks + where you stopped (computed on read)").set_defaults(func=cmd_now)
+
+    r = sub.add_parser("report", help="cross-project activity log from dated session blocks")
+    r.add_argument("--since", help="only blocks newer than e.g. 7d, 14d")
+    r.set_defaults(func=cmd_report)
 
     d = sub.add_parser("decide", help="append a decision + why to .orca/decisions.md (append-only)")
     d.add_argument("text", nargs="+", help="the decision and its reason, e.g. \"per-axis collision — gives wall-slide for free\"")
