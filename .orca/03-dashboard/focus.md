@@ -26,5 +26,11 @@ why: One process beat a separate Node backend — the Vite plugin does scan+watc
 next: done-when 1–4 met. Open polish: a real screenshot pass for visual QA, optional `npm run build` static mode, and SSE live-update wasn't observed headlessly (fs.watch recursive is macOS-fine but untested in the wild). Candidate for `orca done 03-dashboard` on the user's nod.
 head: tsc clean, server boots (`[orca] scanning …`), /api/state correct. The one unproven path is the live push end-to-end (touch a .orca file → page refresh) — logic is in place (debounced broadcast) but only verified by the `ready` event, not a real change event. Watch fs.watch reliability on deep trees.
 
+### 2026-06-04 — last gaps closed: live SSE proven + done-when full-width
+done: Proved the live SSE push end-to-end — a curl listener on `/api/stream` received `event: change` after `touch .orca/03-dashboard/focus.md`, closing the one unverified done-when (reactive). Also fixed the timeline `done-when` block: `.tl-meta` was a `1fr 1fr` grid that starved the list to the left half with an empty arks column on the right; now a vertical flex stack so done-when fills the `.tl` width. tsc still clean, /api/state 200. [commit:0e016c2] [file:dashboard/src/styles.css:98]
+why: Closed the honest gap before any `orca done` — the reactive criterion was wired but never observed firing, so the proof (touch → `event: change`) was run rather than assumed. The CSS was a real layout bug surfaced live in the open dashboard: two-column meta reserved 50% for arks even when a focus has none, cramping the done-when text.
+next: done-when 1–4 now all proven end-to-end. `orca done 03-dashboard`. Remaining polish is non-done-when: screenshot/visual QA pass, optional `npm run build` static mode.
+head: dashboard running on :5183, HMR picked up the CSS fix live. All four criteria observed this session (boot+scan, live SSE change, both views, tsc-clean React/TS). Nothing in flight.
+
 ## Log
 <!-- ark state transitions, append-only -->
