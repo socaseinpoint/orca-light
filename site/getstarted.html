@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="ru" data-lang="ru">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>orca — get started · install, init, use cases</title>
+<meta name="description" content="Install orca in one symlink, init in any git repo, and three real use cases for trusted session continuity in Claude Code." />
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+<header>
+  <div class="wrap nav">
+    <a class="brand" href="index.html"><b>~</b> orca</a>
+    <div class="nav-right">
+      <nav class="nav-links">
+        <a href="index.html"><span data-l="ru">← продукт</span><span data-l="en">← product</span></a>
+        <a href="#cases"><span data-l="ru">кейсы</span><span data-l="en">use cases</span></a>
+        <a href="#install" class="cta">[ install → ]</a>
+      </nav>
+      <a href="https://github.com/socaseinpoint/orca-light" target="_blank" rel="noopener">github ↗</a>
+      <div class="lang" role="group" aria-label="language">
+        <button data-set="ru" type="button">RU</button>
+        <button data-set="en" type="button">EN</button>
+      </div>
+    </div>
+  </div>
+</header>
+
+<main>
+
+  <!-- HERO -->
+  <section class="hero compact">
+    <div class="wrap">
+      <span class="mono reveal">§ get started — install · init · use cases</span>
+      <h1 class="reveal">
+        <span data-l="ru">Один симлинк. Без демона. <em>Поехали.</em></span>
+        <span data-l="en">One symlink. No daemon. <em>Let's go.</em></span>
+      </h1>
+      <p class="lead reveal">
+        <span data-l="ru">orca — один Python-скрипт. Ставится в любой git-репо за минуту, стейт живёт в <code>.orca/</code> вместе с кодом.</span>
+        <span data-l="en">orca is a single Python script. Drops into any git repo in a minute; state lives in <code>.orca/</code> alongside your code.</span>
+      </p>
+      <div class="actions reveal">
+        <a href="#install" class="bracket bracket--primary"><span data-l="ru">[ установка → ]</span><span data-l="en">[ install → ]</span></a>
+        <a href="#cases" class="bracket"><span data-l="ru">[ кейсы → ]</span><span data-l="en">[ use cases → ]</span></a>
+      </div>
+    </div>
+  </section>
+
+  <!-- INSTALL STEPS -->
+  <section id="install">
+    <div class="wrap block">
+      <div class="head reveal">
+        <div class="num">§ 01</div>
+        <div>
+          <h2><span data-l="ru">Установка и первый focus</span><span data-l="en">Install and your first focus</span></h2>
+          <div class="sub"><span data-l="ru">Шесть шагов от нуля до проверяемого хэндоффа.</span><span data-l="en">Six steps from zero to a verifiable handoff.</span></div>
+        </div>
+      </div>
+      <div class="body-grid">
+        <div></div>
+        <div class="gs reveal">
+
+          <div class="gs-step">
+            <div class="gh"><span class="gn">01</span><h3><span data-l="ru">Бинарь на PATH</span><span data-l="en">Binary on your PATH</span></h3></div>
+            <div class="gd"><span data-l="ru">Клонируй и слинкуй. Глобальный — один симлинк, как <code>git</code>. Ноль глобального стейта.</span><span data-l="en">Clone and symlink. Global — one symlink, like <code>git</code>. Zero global state.</span></div>
+<pre>git clone https://github.com/socaseinpoint/orca-light.git
+ln -s "$PWD/orca-light/bin/orca" ~/.local/bin/orca   <span class="c"># ~/.local/bin on PATH</span>
+orca --help          <span class="c"># sanity check</span>
+command -v orca      <span class="c"># prints the symlink path</span></pre>
+          </div>
+
+          <div class="gs-step">
+            <div class="gh"><span class="gn">02</span><h3><span data-l="ru">Инициализируй в проекте</span><span data-l="en">Initialize in a project</span></h3></div>
+            <div class="gd"><span data-l="ru">Из корня любого git-репо. Создаёт <code>.orca/</code> — одна папка, коммитится с кодом, continuity путешествует с репо.</span><span data-l="en">From the root of any git repo. Scaffolds <code>.orca/</code> — one folder, committed with your code, continuity travels with the repo.</span></div>
+<pre>cd ~/code/my-project
+orca init</pre>
+          </div>
+
+          <div class="gs-step">
+            <div class="gh"><span class="gn">03</span><h3><span data-l="ru">Заведи первый focus</span><span data-l="en">Create your first focus</span></h3></div>
+            <div class="gd"><span data-l="ru">Папка + <code>focus.md</code>: зачем кампания (<code>intent</code>), когда готово (<code>done-when</code>), ориентация (<code>Now</code>), пустой <code>Trail</code>.</span><span data-l="en">A folder + <code>focus.md</code>: why the campaign exists (<code>intent</code>), when it's done (<code>done-when</code>), orientation (<code>Now</code>), an empty <code>Trail</code>.</span></div>
+<pre>mkdir -p .orca/01-login-bug/arks
+$EDITOR .orca/01-login-bug/focus.md   <span class="c"># intent / done-when / Now / Trail</span></pre>
+          </div>
+
+          <div class="gs-step">
+            <div class="gh"><span class="gn">04</span><h3><span data-l="ru">Подключи resume-skill</span><span data-l="en">Wire the resume skill</span></h3></div>
+            <div class="gd"><span data-l="ru">Скопируй skill в Claude Code — тогда на входе в сессию работает <code>/orca-resume</code>.</span><span data-l="en">Copy the skill into Claude Code — then <code>/orca-resume</code> works at session start.</span></div>
+<pre>cp -r orca-light/skills/orca-resume ~/.claude/skills/</pre>
+          </div>
+
+          <div class="gs-step">
+            <div class="gh"><span class="gn">05</span><h3><span data-l="ru">Хуки (опционально)</span><span data-l="en">Hooks (optional)</span></h3></div>
+            <div class="gd"><span data-l="ru">Три read-only хука: SessionStart инжектит <code>orca now</code>, Stop предупреждает если якоря не держат, PreCompact флашит «почему» перед компакцией. Вставь в <code>~/.claude/settings.json</code> (<code>/config</code>), заменив <code>ORCA_LIGHT</code> на путь репо.</span><span data-l="en">Three read-only hooks: SessionStart injects <code>orca now</code>, Stop warns if anchors don't hold, PreCompact flushes the "why" before compaction. Paste into <code>~/.claude/settings.json</code> (<code>/config</code>), replacing <code>ORCA_LIGHT</code> with the repo path.</span></div>
+<pre><span class="k">"SessionStart"</span>: [{ <span class="k">"hooks"</span>: [{ <span class="k">"type"</span>: <span class="a">"command"</span>,
+  <span class="k">"command"</span>: <span class="a">"ORCA_LIGHT/hooks/session-start.sh"</span> }] }]</pre>
+          </div>
+
+          <div class="gs-step">
+            <div class="gh"><span class="gn">06</span><h3><span data-l="ru">Работай. Доверяй якорям.</span><span data-l="en">Work. Trust the anchors.</span></h3></div>
+            <div class="gd"><span data-l="ru">Дописывай Trail по ходу, <code>orca verify</code> доказывает хэндофф, <code>orca done</code> закрывает. На следующей сессии — <code>/orca-resume</code>.</span><span data-l="en">Append to the Trail as you go, <code>orca verify</code> proves the handoff, <code>orca done</code> closes it. Next session — <code>/orca-resume</code>.</span></div>
+<pre>orca now             <span class="c"># where am I?</span>
+orca verify          <span class="c"># prove the latest handoff</span>
+orca done login-bug  <span class="c"># move it to done/</span></pre>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- USE CASES -->
+  <section id="cases">
+    <div class="wrap block">
+      <div class="head reveal">
+        <div class="num">§ 02</div>
+        <div>
+          <h2><span data-l="ru">Три кейса, где это окупается.</span><span data-l="en">Three cases where it pays off.</span></h2>
+          <div class="sub"><span data-l="ru">Не про «ещё один трекер». Про то, чтобы холодный возврат был дешёвым.</span><span data-l="en">Not "another tracker." About making the cold return cheap.</span></div>
+        </div>
+      </div>
+      <div class="cases reveal">
+
+        <div class="case">
+          <span class="cnum">case 01</span>
+          <span class="who"><span data-l="ru">фича на много дней</span><span data-l="en">multi-day feature</span></span>
+          <h3><span data-l="ru">Большая задача, которую не закрыть за раз</span><span data-l="en">A big task you can't finish in one sitting</span></h3>
+          <p><span data-l="ru">Строишь фичу неделю, по часу в день. Каждое утро — «так, на чём я остановился». <b>orca-resume</b> читает прошлый транскрипт + git log и выдаёт ре-ориентацию на один экран: проблема · сделано · что изменилось · следующий шаг.</span><span data-l="en">You build a feature over a week, an hour a day. Every morning — "wait, where was I?" <b>orca-resume</b> reads the prior transcript + git log and hands back a one-screen re-orientation: problem · done · what changed · next step.</span></p>
+          <div class="pin"><code>/orca-resume</code></div>
+        </div>
+
+        <div class="case">
+          <span class="cnum">case 02</span>
+          <span class="who"><span data-l="ru">дебаг через сессии</span><span data-l="en">debugging across sessions</span></span>
+          <h3><span data-l="ru">Баг, который не влез в одну сессию</span><span data-l="en">A bug that didn't fit one session</span></h3>
+          <p><span data-l="ru">Сужаешь гипотезы, упираешься в стенку, закрываешь ноут. Самое ценное — не «что сделал», а <b>что было в голове</b>: какие версии отвёл, что подозреваешь. Слой <b>head:</b> держит этот хрупкий поток до завтра.</span><span data-l="en">You narrow hypotheses, hit a wall, close the laptop. The valuable part isn't "what I did" but <b>what was in your head</b>: which theories you ruled out, what you suspect. The <b>head:</b> layer keeps that fragile thread till tomorrow.</span></p>
+          <div class="pin"><code>head:</code> <span data-l="ru">гипотезы в полёте</span><span data-l="en">hypotheses in flight</span></div>
+        </div>
+
+        <div class="case">
+          <span class="cnum">case 03</span>
+          <span class="who"><span data-l="ru">параллельная работа</span><span data-l="en">parallel work</span></span>
+          <h3><span data-l="ru">Несколько focus'ов и окон Claude разом</span><span data-l="en">Several focuses and Claude windows at once</span></h3>
+          <p><span data-l="ru">Две сессии на разных арках в одном репо. Наивный resume свернул бы живой транскрипт и побил continuity. <b>Live-aware, set-based</b> resume знает, какие транскрипты безопасны — живую параллельную пропускает, множество сворачивает ровно один раз.</span><span data-l="en">Two sessions on different arks in one repo. A naive resume would fold a live transcript and corrupt continuity. The <b>live-aware, set-based</b> resume knows which transcripts are safe — it skips the live parallel one and folds the set exactly once.</span></p>
+          <div class="pin"><code>orca session pending</code></div>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- CLOSER -->
+  <section>
+    <div class="wrap closer reveal">
+      <h2><span data-l="ru">Поставил за минуту — доверяешь годами.</span><span data-l="en">Installed in a minute — trusted for years.</span></h2>
+      <p><span data-l="ru">Открытый код, ноль глобального стейта, ничего не висит фоном. Это просто файлы в твоём репо.</span><span data-l="en">Open source, zero global state, nothing running in the background. It's just files in your repo.</span></p>
+      <div class="actions">
+        <a href="https://github.com/socaseinpoint/orca-light" target="_blank" rel="noopener" class="bracket bracket--primary">[ github ↗ ]</a>
+        <a href="index.html" class="bracket"><span data-l="ru">[ ← к продукту ]</span><span data-l="en">[ ← back to product ]</span></a>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<footer>
+  <div class="wrap foot">
+    <span class="mono">orca-light · <span data-l="ru">session-continuity для Claude Code</span><span data-l="en">session continuity for Claude Code</span></span>
+    <a href="https://github.com/socaseinpoint/orca-light" target="_blank" rel="noopener" class="mono">github ↗</a>
+  </div>
+</footer>
+
+<script src="app.js"></script>
+</body>
+</html>

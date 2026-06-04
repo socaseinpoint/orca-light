@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="ru" data-lang="ru">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>orca — trusted session continuity for Claude Code</title>
+<meta name="description" content="orca — owned, transparent, verifiable session continuity for Claude Code. Lives in .orca/, like .git/. Facts checked, story labeled." />
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+<header>
+  <div class="wrap nav">
+    <a class="brand" href="index.html"><b>~</b> orca</a>
+    <div class="nav-right">
+      <nav class="nav-links">
+        <a href="#model"><span data-l="ru">модель</span><span data-l="en">model</span></a>
+        <a href="#trust"><span data-l="ru">доверие</span><span data-l="en">trust</span></a>
+        <a href="getstarted.html" class="cta">[ get started → ]</a>
+      </nav>
+      <a href="https://github.com/socaseinpoint/orca-light" target="_blank" rel="noopener">github ↗</a>
+      <div class="lang" role="group" aria-label="language">
+        <button data-set="ru" type="button">RU</button>
+        <button data-set="en" type="button">EN</button>
+      </div>
+    </div>
+  </div>
+</header>
+
+<main>
+
+  <!-- HERO -->
+  <section class="hero">
+    <div class="wrap">
+      <span class="mono reveal">§ 00 — continuity layer · project-local</span>
+      <h1 class="reveal">
+        <span data-l="ru">Память между сессиями, которой <em>можно доверять</em>.</span>
+        <span data-l="en">Session memory you can <em>actually trust</em>.</span>
+      </h1>
+      <p class="lead reveal">
+        <span data-l="ru">orca живёт в <code>.orca/</code>, как <code>.git/</code>. Факты проверены машиной, история помечена как история. Никакого чёрного ящика.</span>
+        <span data-l="en">orca lives in <code>.orca/</code>, like <code>.git/</code>. Facts checked by machine, story labeled as story. No black box.</span>
+      </p>
+      <div class="actions reveal">
+        <a href="getstarted.html" class="bracket bracket--primary"><span data-l="ru">[ начать → ]</span><span data-l="en">[ get started → ]</span></a>
+        <a href="#problem" class="bracket"><span data-l="ru">[ зачем это → ]</span><span data-l="en">[ why it exists → ]</span></a>
+      </div>
+    </div>
+  </section>
+
+  <!-- PROBLEM -->
+  <section id="problem">
+    <div class="wrap block">
+      <div class="head reveal">
+        <div class="num">§ 01</div>
+        <div>
+          <h2><span data-l="ru">Возвращаешься к коду — и ты потерян.</span><span data-l="en">You come back to the code — and you're lost.</span></h2>
+          <div class="sub"><span data-l="ru">Не помнишь <em>почему</em> принял решение, <em>куда</em> шёл, <em>что</em> уже сделано.</span><span data-l="en">You can't recall <em>why</em> you made the call, <em>where</em> you were headed, <em>what</em> is already done.</span></div>
+        </div>
+      </div>
+      <div class="body-grid reveal">
+        <div></div>
+        <div>
+          <p class="prose"><span data-l="ru">Харнес умеет в continuity — фоновые саммари, авто-память. Они реальные. Но это <b>чёрный ящик</b>: непроверяемая проза, непрозрачное хранилище, меняется под тобой без согласия.</span><span data-l="en">The harness does continuity — background summaries, auto-memory. They're real. But they're a <b>black box</b>: unverifiable prose, an opaque store, changing under you without consent.</span></p>
+          <p class="prose dim"><span data-l="ru">Для работы, которой надо <em>доверять</em>, непроверяемое саммари дисквалифицировано. Это недоверие — и есть причина, почему orca существует.</span><span data-l="en">For work you have to <em>trust</em>, an unverifiable summary is disqualified. That distrust is exactly why orca exists.</span></p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- MODEL -->
+  <section id="model">
+    <div class="wrap block">
+      <div class="head reveal">
+        <div class="num">§ 02</div>
+        <div>
+          <h2><span data-l="ru">Три понятия. Состояние — это папка.</span><span data-l="en">Three concepts. State is a folder.</span></h2>
+          <div class="sub"><span data-l="ru">Уровни вычисляются из расположения, не объявляются флагом.</span><span data-l="en">Levels are derived from location, never declared by a flag.</span></div>
+        </div>
+      </div>
+      <div class="concepts reveal">
+        <div class="concept">
+          <span class="tag">focus</span>
+          <h3><span data-l="ru">атом работы</span><span data-l="en">the atom of work</span></h3>
+          <p><span data-l="ru">Самодостаточная папка <code>.orca/NN-name/</code>: <code>intent</code>, <code>done-when</code>, <code>Now</code>, append-only <code>Trail</code>.</span><span data-l="en">A self-contained folder <code>.orca/NN-name/</code>: <code>intent</code>, <code>done-when</code>, <code>Now</code>, an append-only <code>Trail</code>.</span></p>
+        </div>
+        <div class="concept">
+          <span class="tag">ark</span>
+          <h3><span data-l="ru">деливерабл</span><span data-l="en">a deliverable</span></h3>
+          <p><span data-l="ru">Конкретная штука под focus'ом, которую надо сдать. Тот же двухсостоянийный жизненный цикл.</span><span data-l="en">The concrete thing to ship under a focus. The same two-state lifecycle.</span></p>
+        </div>
+        <div class="concept">
+          <span class="tag">side-effect</span>
+          <h3><span data-l="ru">результат вовне</span><span data-l="en">the result, outside</span></h3>
+          <p><span data-l="ru">Реальный итог живёт вне orca — репо, Jira, SaaS. orca лишь указывает на него якорем.</span><span data-l="en">The real outcome lives outside orca — repo, Jira, SaaS. orca only points at it with an anchor.</span></p>
+        </div>
+      </div>
+      <div class="body-grid reveal" style="margin-top:2rem;">
+        <div></div>
+        <div>
+          <p class="prose dim"><span data-l="ru">Два состояния выражены <b>расположением папки</b>, не полем: in-work — <code>.orca/NN/</code>, done — <code>.orca/done/NN/</code>. Закрытие — это <code style="color:var(--accent)">orca done</code>, которое двигает папку, а не флипает статус.</span><span data-l="en">Two states are expressed by <b>folder location</b>, not a field: in-work — <code>.orca/NN/</code>, done — <code>.orca/done/NN/</code>. Closing is <code style="color:var(--accent)">orca done</code>, which moves the folder, not flips a status.</span></p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- WAS / NOW -->
+  <section>
+    <div class="wrap block">
+      <div class="head reveal">
+        <div class="num">§ 03</div>
+        <div><h2><span data-l="ru">Было / стало.</span><span data-l="en">Before / after.</span></h2></div>
+      </div>
+      <div class="vs reveal">
+        <div class="was">
+          <div class="label"><span data-l="ru">// чёрный ящик</span><span data-l="en">// black box</span></div>
+          <ul>
+            <li><span data-l="ru">непроверяемая проза</span><span data-l="en">unverifiable prose</span></li>
+            <li><span data-l="ru">непрозрачное хранилище</span><span data-l="en">an opaque store</span></li>
+            <li><span data-l="ru">меняется без согласия</span><span data-l="en">changes without consent</span></li>
+            <li><span data-l="ru">глобальный стейт, оторван от кода</span><span data-l="en">global state, split from the code</span></li>
+            <li><span data-l="ru">статус-флаги, которые кто-то флипает</span><span data-l="en">status flags someone flips</span></li>
+          </ul>
+        </div>
+        <div class="now">
+          <div class="label">// orca</div>
+          <ul>
+            <li><span data-l="ru">каждое «сделано» с якорем</span><span data-l="en">every "done" carries an anchor</span></li>
+            <li><span data-l="ru">файлы в репо, читаемые глазами</span><span data-l="en">files in the repo, human-readable</span></li>
+            <li><span data-l="ru">verify перепроверяет об реальность</span><span data-l="en">verify re-checks against reality</span></li>
+            <li><span data-l="ru">project-local, как .git/</span><span data-l="en">project-local, like .git/</span></li>
+            <li><span data-l="ru">done — это перемещение, не поле</span><span data-l="en">done is a move, not a field</span></li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- TRUST -->
+  <section id="trust">
+    <div class="wrap block">
+      <div class="head reveal">
+        <div class="num">§ 04</div>
+        <div>
+          <h2><span data-l="ru">Факты проверены. История помечена.</span><span data-l="en">Facts checked. Story labeled.</span></h2>
+          <div class="sub"><span data-l="ru">У хэндофф-блока два слоя смысла — по тому, что можно проверить.</span><span data-l="en">A handoff block has two meaning-zones — split by what can be checked.</span></div>
+        </div>
+      </div>
+      <div class="body-grid">
+        <div></div>
+        <div>
+          <figure class="reveal">
+            <div class="figcap"><span>fig.01 — trail block</span><span>append-only</span></div>
+<pre><span class="c">### 2026-06-04</span>
+<span class="k">done:</span> what was actually done. <span class="a">[commit:6a6f1db] [file:bin/orca:906] [test:bash tests/run.sh]</span>
+<span class="k">why:</span>  the rationale behind the calls made
+<span class="k">next:</span> the single next step
+<span class="k">head:</span> what's in flight — hypotheses, what's stuck</pre>
+          </figure>
+
+          <div class="layers reveal">
+            <div class="layer proven">
+              <div class="lk">done:</div>
+              <div class="ld"><b><span data-l="ru">Что реально сделано.</span><span data-l="en">What actually happened.</span></b> <span data-l="ru">Несёт ≥1 якорь — <code>commit</code> / <code>file:line</code> / <code>test</code>. Фальшивый якорь → verify падает.</span><span data-l="en">Carries ≥1 anchor — <code>commit</code> / <code>file:line</code> / <code>test</code>. A fake anchor → verify fails.</span></div>
+              <div class="lz"><span data-l="ru">проверяемо</span><span data-l="en">verified</span></div>
+            </div>
+            <div class="layer orient">
+              <div class="lk">why:</div>
+              <div class="ld"><b><span data-l="ru">Почему</span><span data-l="en">Why</span></b> <span data-l="ru">приняты эти решения. Рассуждение, которое к утру испаряется первым.</span><span data-l="en">these calls were made. The reasoning that evaporates first by morning.</span></div>
+              <div class="lz"><span data-l="ru">нарратив</span><span data-l="en">narrative</span></div>
+            </div>
+            <div class="layer orient">
+              <div class="lk">next:</div>
+              <div class="ld"><b><span data-l="ru">Единственный</span><span data-l="en">The single</span></b> <span data-l="ru">следующий шаг. Не список — одно действие, чтобы холодный мозг стартанул без раскачки.</span><span data-l="en">next step. Not a list — one action, so a cold brain starts without warm-up.</span></div>
+              <div class="lz"><span data-l="ru">нарратив</span><span data-l="en">narrative</span></div>
+            </div>
+            <div class="layer orient">
+              <div class="lk">head:</div>
+              <div class="ld"><b><span data-l="ru">Что в полёте:</span><span data-l="en">What's in flight:</span></b> <span data-l="ru">гипотезы, на чём застрял, за чем следить. Мысленный поток, который иначе теряется.</span><span data-l="en">hypotheses, what's stuck, what to watch. The mental thread that's otherwise lost.</span></div>
+              <div class="lz"><span data-l="ru">нарратив</span><span data-l="en">narrative</span></div>
+            </div>
+          </div>
+
+          <p class="prose dim reveal" style="margin-top:1.8rem;"><span data-l="ru">Граница — по проверяемости. <b style="color:var(--ink)">done:</b> авто-перепроверяет <code style="color:var(--accent)">orca verify</code>: коммит есть? файл ≥LINE? тест exit 0? <b style="color:var(--ink)">why/next/head</b> заякорить нельзя — это намерение — поэтому verify их игнорирует by design.</span><span data-l="en">The boundary runs along verifiability. <b style="color:var(--ink)">done:</b> is re-checked by <code style="color:var(--accent)">orca verify</code>: commit exists? file ≥LINE? test exit 0? <b style="color:var(--ink)">why/next/head</b> can't be anchored — it's intent — so verify ignores it by design.</span></p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- USE -->
+  <section id="use">
+    <div class="wrap block">
+      <div class="head reveal">
+        <div class="num">§ 05</div>
+        <div>
+          <h2><span data-l="ru">Continuity течёт сама. На входе — один resume.</span><span data-l="en">Continuity flows on its own. One resume on the way in.</span></h2>
+        </div>
+      </div>
+      <div class="body-grid">
+        <div></div>
+        <div class="steps reveal">
+          <div class="step"><div class="s">d 01</div><div class="t"><code>orca trail</code> <span data-l="ru">— дописал блок: done с якорями + why/next/head.</span><span data-l="en">— append a block: done with anchors + why/next/head.</span></div></div>
+          <div class="step"><div class="s">d 02</div><div class="t"><code>orca decide</code> <span data-l="ru">— неочевидное решение легло в decisions.md.</span><span data-l="en">— a non-obvious decision lands in decisions.md.</span></div></div>
+          <div class="step"><div class="s">d 03</div><div class="t"><code>orca done</code> <span data-l="ru">— сдал деливерабл: двигает в done/ + пишет Log-строку.</span><span data-l="en">— ship a deliverable: moves to done/ + writes a Log line.</span></div></div>
+          <div class="step"><div class="s">d 04</div><div class="t"><code>/orca-resume</code> <span data-l="ru">— субагент читает транскрипт прошлой сессии + git log, сжимает в один проверенный блок, выдаёт ре-ориентацию на один экран.</span><span data-l="en">— a subagent reads the prior transcript + git log, compresses into one verified block, hands you a one-screen re-orientation.</span></div></div>
+        </div>
+      </div>
+      <div class="body-grid reveal" style="margin-top:2rem;">
+        <div></div>
+        <div>
+          <p class="prose dim"><span data-l="ru">Под капотом resume <b>live-aware и set-based</b>: ledger сессий знает, какие транскрипты безопасно сворачивать — исключая текущую, живую параллельную, уже-свёрнутые и чужие проекты. Сворачивает множество ровно один раз, живой транскрипт не трогает.</span><span data-l="en">Under the hood resume is <b>live-aware and set-based</b>: a session ledger knows which transcripts are safe to fold — excluding the current one, a live parallel one, already-folded ones, and other projects. Folds the set exactly once, never touches a live transcript.</span></p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- NOT -->
+  <section>
+    <div class="wrap block">
+      <div class="head reveal">
+        <div class="num">§ 06</div>
+        <div>
+          <h2><span data-l="ru">Чем orca НЕ является.</span><span data-l="en">What orca is NOT.</span></h2>
+          <div class="sub"><span data-l="ru">YAGNI как принцип. Меньше машинерии — больше доверия.</span><span data-l="en">YAGNI as a principle. Less machinery, more trust.</span></div>
+        </div>
+      </div>
+      <div class="nots reveal">
+        <div class="not"><span class="x"><span data-l="ru">× не</span><span data-l="en">× not</span></span><p><b><span data-l="ru">саммаризатор.</span><span data-l="en">a summarizer.</span></b> <span data-l="ru">Session Memory и компакция работают — orca их игнорирует, не гоняется с движком сжатия.</span><span data-l="en">Session Memory and compaction run — orca ignores them, doesn't race the compress engine.</span></p></div>
+        <div class="not"><span class="x"><span data-l="ru">× не</span><span data-l="en">× not</span></span><p><b><span data-l="ru">memory-search.</span><span data-l="en">a memory-search store.</span></b> <span data-l="ru">Глубокий recall старых обсуждений остаётся за claude-mem.</span><span data-l="en">Deep recall of old discussion stays with claude-mem.</span></p></div>
+        <div class="not"><span class="x"><span data-l="ru">× нет</span><span data-l="en">× no</span></span><p><b><span data-l="ru">шедулера и демона.</span><span data-l="en">scheduler or daemon.</span></b> <span data-l="ru">Resume бежит, потому что ты его позвал. Он может спросить и ждать — хук не может.</span><span data-l="en">Resume runs because you invoked it. It can ask and wait — a hook can't.</span></p></div>
+        <div class="not"><span class="x"><span data-l="ru">× нет</span><span data-l="en">× no</span></span><p><b><span data-l="ru">cross-project, реестра, флагов.</span><span data-l="en">cross-project, registry, flags.</span></b> <span data-l="ru">Стейт project-local. Поверхность: init · now · verify · decide · trail · done · gate · session.</span><span data-l="en">State is project-local. Surface: init · now · verify · decide · trail · done · gate · session.</span></p></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- CLOSER -->
+  <section>
+    <div class="wrap closer reveal">
+      <h2><span data-l="ru">То, что <em>.git</em> сделал для истории кода — orca делает для истории <em>того, почему</em>.</span><span data-l="en">What <em>.git</em> did for the history of your code, orca does for the history of <em>why</em>.</span></h2>
+      <p><span data-l="ru">Бинарь глобальный — один симлинк на PATH. Стейт — project-local. Открытый код, ставится одной командой.</span><span data-l="en">The binary is global — one symlink on PATH. State is project-local. Open source, installs with one command.</span></p>
+      <div class="actions">
+        <a href="getstarted.html" class="bracket bracket--primary"><span data-l="ru">[ начать → ]</span><span data-l="en">[ get started → ]</span></a>
+        <a href="https://github.com/socaseinpoint/orca-light" target="_blank" rel="noopener" class="bracket">[ github ↗ ]</a>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<footer>
+  <div class="wrap foot">
+    <span class="mono">orca-light · <span data-l="ru">session-continuity для Claude Code</span><span data-l="en">session continuity for Claude Code</span></span>
+    <a href="https://github.com/socaseinpoint/orca-light" target="_blank" rel="noopener" class="mono">github ↗</a>
+  </div>
+</footer>
+
+<script src="app.js"></script>
+</body>
+</html>
