@@ -17,6 +17,8 @@ Usage:
   orca init                            scaffold meta-tier ~/.orca + project .orca
   orca verify [ARKFILE] [--no-tests]   check a handoff's anchors against reality
   orca now                             resume: goal + open arks + where you stopped + blockers
+  orca gate                            Stop-gate: exit 1 + reason if the handoff isn't safe to end on
+  orca stamp                           mark session start (SessionStart hook; feeds gate freshness)
 
 Topology (all views derived on read, nothing derived is stored):
   ~/.orca/threads/<thread>.md   cross-project intent + goal (one writer)
@@ -139,6 +141,35 @@ def bare_claims(text):
     return flagged
 
 
+def check_anchors(text, root, no_tests, timeout):
+    """Core check. Returns (ok, lines, n_anchors). Pure — no printing.
+    lines are (status, message) tuples where status in OK/FAIL/SKIP/BARE/NONE."""
+    anchors = ANCHOR_RE.findall(text)
+    lines, ok = [], True
+    if not anchors:
+        lines.append(("NONE", "no anchors found — handoff is unproven prose"))
+    for kind, payload in anchors:
+        if kind == "file":
+            passed, msg = check_file(payload, root)
+        elif kind == "commit":
+            passed, msg = check_commit(payload, root)
+        else:  # test
+            if no_tests:
+                lines.append(("SKIP", "[test:%s] (--no-tests)" % payload))
+                continue
+            passed, msg = check_test(payload, root, timeout)
+        lines.append(("OK" if passed else "FAIL", "[%s:%s] %s" % (kind, payload, msg)))
+        ok = ok and passed
+    for b in bare_claims(text):
+        lines.append(("BARE", b[:90]))
+        ok = False
+    return ok, lines, len(anchors)
+
+
+_TAG = {"OK": (GREEN, " OK "), "FAIL": (RED, "FAIL"), "SKIP": (YELLOW, "SKIP"),
+        "BARE": (YELLOW, "BARE"), "NONE": (YELLOW, "----")}
+
+
 def cmd_verify(args):
     root = find_repo_root(os.getcwd())
     path = args.arkfile or default_arkfile(root)
@@ -152,36 +183,92 @@ def cmd_verify(args):
     with open(path, "r", errors="replace") as fh:
         text = fh.read()
 
-    anchors = ANCHOR_RE.findall(text)
-    rel = os.path.relpath(path, root)
-    print(_c(DIM, "ark: %s  (root: %s)" % (rel, root)))
-
-    if not anchors:
-        print(_c(YELLOW, "no anchors found — handoff is unproven prose"))
-
-    ok = True
-    for kind, payload in anchors:
-        if kind == "file":
-            passed, msg = check_file(payload, root)
-        elif kind == "commit":
-            passed, msg = check_commit(payload, root)
-        else:  # test
-            if args.no_tests:
-                print("  %s [test:%s] %s" % (_c(YELLOW, "SKIP"), payload, _c(DIM, "(--no-tests)")))
-                continue
-            passed, msg = check_test(payload, root, args.timeout)
-        tag = _c(GREEN, " OK ") if passed else _c(RED, "FAIL")
-        print("  %s [%s:%s] %s" % (tag, kind, payload, _c(DIM, msg)))
-        ok = ok and passed
-
-    bare = bare_claims(text)
-    for b in bare:
-        print("  %s %s" % (_c(YELLOW, "BARE"), _c(DIM, b[:90])))
-    if bare:
-        ok = False
-
+    print(_c(DIM, "ark: %s  (root: %s)" % (os.path.relpath(path, root), root)))
+    ok, lines, _ = check_anchors(text, root, args.no_tests, args.timeout)
+    for status, msg in lines:
+        color, tag = _TAG[status]
+        if status == "NONE":
+            print(_c(YELLOW, msg))
+        else:
+            print("  %s %s" % (_c(color, tag), _c(DIM, msg)))
     print(_c(GREEN, "verify: PASS") if ok else _c(RED, "verify: FAIL"))
     return 0 if ok else 1
+
+
+def session_stamp_path(root):
+    return os.path.join(root, ".orca", ".session")
+
+
+def attempts_path(root):
+    return os.path.join(root, ".orca", ".stop-attempts")
+
+
+def _gate_check(root, timeout):
+    """Pure check. Returns (blocked: bool, reason: str). Gates the freshest
+    active ark on: updated-this-session AND anchors hold (fast, --no-tests)."""
+    open_arks = [a for a in iter_arks(root) if is_open(a)]
+    if not open_arks:
+        return False, ""  # nothing active — nothing to hand off
+    ark = open_arks[0]  # freshest active
+
+    stamp = session_stamp_path(root)
+    if os.path.isfile(stamp):
+        try:
+            started = float(open(stamp).read().strip())
+        except (ValueError, OSError):
+            started = None
+        if started is not None and ark["mtime"] < started:
+            return True, ("active ark '%s' was not updated this session — write a "
+                          "fresh handoff (what you did + anchors + next) before ending."
+                          % ark["slug"])
+
+    ok, lines, n = check_anchors(ark["text"], root, no_tests=True, timeout=timeout)
+    if ok and n > 0:
+        return False, ""
+    why = "; ".join("%s %s" % (s, m) for s, m in lines if s in ("FAIL", "BARE", "NONE")) \
+          or "handoff has no checkable anchors"
+    return True, ("handoff for '%s' does not hold: %s — fix the anchors or the claim, "
+                  "then end." % (ark["slug"], why))
+
+
+def cmd_gate(args):
+    """Stop-gate brain. Plain: exit 1 + reason if the freshest active ark isn't
+    safe to end on, else 0. With --stop: same, but track .stop-attempts and give
+    up after --max-attempts (safety hatch — never trap the session forever)."""
+    root = find_repo_root(os.getcwd())
+    blocked, reason = _gate_check(root, args.timeout)
+
+    if not args.stop:
+        if blocked:
+            print(reason)
+        return 1 if blocked else 0
+
+    apath = attempts_path(root)
+    if not blocked:
+        try:
+            os.remove(apath)
+        except OSError:
+            pass
+        return 0
+
+    n = 0
+    if os.path.isfile(apath):
+        try:
+            n = int(open(apath).read().strip())
+        except (ValueError, OSError):
+            n = 0
+    if n >= args.max_attempts:
+        try:
+            os.remove(apath)
+        except OSError:
+            pass
+        sys.stderr.write("orca: gate gave up after %d tries — ending with an "
+                         "unverified handoff. Fix it next session.\n" % n)
+        return 0
+    with open(apath, "w") as fh:
+        fh.write("%d" % (n + 1))
+    print(reason)
+    return 1
 
 
 # --- topology: meta-tier ~/.orca + project .orca, all derivation on read ---
@@ -303,6 +390,11 @@ def cmd_init(args):
             fh.write("# decisions — %s\n\nWhy this repo's code is the way it is.\n"
                      % os.path.basename(root))
         made.append(pdec)
+    pign = os.path.join(pdir, ".gitignore")
+    if not os.path.exists(pign):
+        with open(pign, "w") as fh:
+            fh.write(".session\n.stop-attempts\n")  # transient session state, not history
+        made.append(pign)
 
     if made:
         for m in made:
@@ -322,6 +414,21 @@ def _ark_line(a, indent):
              _c(DIM, "done-when: " + a["fields"].get("done-when", "—"))))
     print("%s    %s %s"
           % (indent, _c(DIM, "↳ stopped:"), _c(DIM, stopped)))
+
+
+def cmd_stamp(args):
+    """Mark session start (SessionStart hook calls this). One scalar, one writer.
+    The gate reads it to tell 'updated this session' from 'stale'."""
+    root = find_repo_root(os.getcwd())
+    if not os.path.isdir(os.path.join(root, ".orca")):
+        return 0  # project doesn't use orca — no-op
+    with open(session_stamp_path(root), "w") as fh:
+        fh.write("%d" % int(time.time()))
+    try:
+        os.remove(attempts_path(root))  # fresh session resets the gate's give-up counter
+    except OSError:
+        pass
+    return 0
 
 
 def cmd_now(args):
@@ -367,6 +474,14 @@ def main(argv=None):
     sub.add_parser("init", help="scaffold meta-tier ~/.orca and project .orca").set_defaults(func=cmd_init)
 
     sub.add_parser("now", help="resume view: goal + open arks + where you stopped (computed on read)").set_defaults(func=cmd_now)
+
+    sub.add_parser("stamp", help="mark session start (SessionStart hook)").set_defaults(func=cmd_stamp)
+
+    g = sub.add_parser("gate", help="Stop-gate: exit 1 + reason if freshest active ark isn't safe to end on")
+    g.add_argument("--timeout", type=int, default=120, help="per-test timeout seconds")
+    g.add_argument("--stop", action="store_true", help="Stop-hook mode: track attempts, give up after --max-attempts")
+    g.add_argument("--max-attempts", type=int, default=3, help="block at most N times before letting the session end")
+    g.set_defaults(func=cmd_gate)
 
     args = p.parse_args(argv)
     if not getattr(args, "func", None):
