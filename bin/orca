@@ -664,14 +664,22 @@ def cmd_gate(args):
     return 1
 
 
-def _decide_target(root):
-    """Where a decision lands: the single in-work focus's decisions.md. With zero or
-    several in-work focuses, fall back to project-level .orca/decisions.md so a
-    decision is never dropped (ambiguity shouldn't lose the why)."""
+def _decide_target(root, slug=None):
+    """Where a decision lands. Returns (path, label, kind):
+      kind="focus"   -> a specific focus's decisions.md
+      kind="root"    -> project-level fallback (ambiguous: !=1 in-work focus)
+      kind="missing" -> an explicit --focus slug matched nothing
+    An explicit slug wins; else the sole in-work focus; else the project-level
+    ledger so an ambiguous decision is never silently dropped (the caller WARNS)."""
     focuses = iter_focuses(root)
+    if slug:
+        for f in focuses:
+            if f["slug"] == slug:
+                return os.path.join(f["dir"], "decisions.md"), f["slug"], "focus"
+        return None, slug, "missing"
     if len(focuses) == 1:
-        return os.path.join(focuses[0]["dir"], "decisions.md"), focuses[0]["slug"]
-    return os.path.join(root, ".orca", "decisions.md"), os.path.basename(root)
+        return os.path.join(focuses[0]["dir"], "decisions.md"), focuses[0]["slug"], "focus"
+    return os.path.join(root, ".orca", "decisions.md"), os.path.basename(root), "root"
 
 
 def cmd_decide(args):
@@ -685,7 +693,13 @@ def cmd_decide(args):
     if not text:
         print(_c(RED, "decide: nothing to record"))
         return 2
-    path, label = _decide_target(root)
+    path, label, kind = _decide_target(root, getattr(args, "focus", None))
+    if kind == "missing":
+        slugs = [f["slug"] for f in iter_focuses(root)]
+        print(_c(RED, "decide: no in-work focus '%s'" % label))
+        if slugs:
+            print("  in-work focuses: " + ", ".join(slugs))
+        return 2
     if not os.path.exists(path):
         os.makedirs(os.path.dirname(path), exist_ok=True)
         with open(path, "w") as fh:
@@ -694,6 +708,12 @@ def cmd_decide(args):
     with open(path, "a") as fh:
         fh.write("- %s — %s\n" % (time.strftime("%Y-%m-%d", time.localtime()), text))
     print(_c(GREEN, "decided: ") + text)
+    if kind == "root":
+        slugs = [f["slug"] for f in iter_focuses(root)]
+        print(_c(YELLOW, "  ↳ landed in project-level .orca/decisions.md "
+                         "(%d in-work focuses — ambiguous)." % len(slugs)))
+        print("    target one next time: orca decide --focus <%s> \"...\""
+              % ("|".join(slugs) if slugs else "slug"))
     return 0
 
 
@@ -981,6 +1001,7 @@ def main(argv=None):
 
     d = sub.add_parser("decide", help="append a decision + why to the focus's decisions.md")
     d.add_argument("text", nargs="+", help="the decision and its reason, e.g. \"per-axis collision — wall-slide for free\"")
+    d.add_argument("--focus", help="target this in-work focus by slug (else: the sole in-work focus, or project-level on ambiguity)")
     d.set_defaults(func=cmd_decide)
 
     tr = sub.add_parser("trail", help="render one focus's (or ark's) Trail oldest->newest")
