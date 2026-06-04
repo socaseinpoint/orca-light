@@ -12,9 +12,9 @@ updated: 2026-06-04
 
 ## sessions
 ### 2026-06-04
-done: stale-handoff detector warns in `orca now` when commits outran the last anchor. [test:bash tests/test_stale.sh]
+done: stale-handoff detector + verify v2 (zones) + pluggable judge landed. [commit:5b224ed] [test:bash tests/test_stale.sh]
 done: verify schema v2 — `done:` is the proven zone (anchor required), why/next/head is free narrative. [test:bash tests/test_zones.sh]
 done: pluggable claim-vs-evidence judge (deterministic receipts + a separate Haiku grader); the real Haiku caught a true-anchor/false-claim. [test:bash tests/test_judge.sh]
 why:  the concept oversold verify; the real hole was claim<->evidence, a known field (groundedness), so we delegate judging and keep the receipt layer as ours.
 next: build the resume skill — dispatch a subagent to compress the prior session transcript into one 4-layer block, append to the ark, then verify.
-head: full suite is green (verify/zones/gate/stale/views/decide/judge); bin/orca changes are UNCOMMITTED; the old proof-handoff ark is ~7 commits stale and needs reconciling.
+head: suite green (verify/zones/gate/stale/views/decide/judge); committed at 5b224ed; proof-handoff archived. next big piece is the resume skill; report cross-project still open.

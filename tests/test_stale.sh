@@ -47,11 +47,12 @@ printf '# ark: live\nthread: t1\nstate: active\n\n## handoff\n- caught up. [comm
 "$ORCA" now >/tmp/orca_s 2>&1
 hasnt "commit after last anchored handoff" "re-anchoring to HEAD clears the warning"
 
-# 5. handoff with NO commit anchor, but commits exist -> still behind (capped)
+# 5. handoff with NO commit anchor -> freshness untracked, NOT a false "behind" alarm
 printf '# ark: bare\nthread: t1\nstate: active\n\n## handoff\n- did stuff, no anchor.\n' > .orca/arks/bare.md
 rm .orca/arks/live.md
 "$ORCA" now >/tmp/orca_s 2>&1
-has "after last anchored handoff" "handoff anchoring no commit is flagged as behind"
+has "freshness untracked" "ark with no commit anchor -> untracked (not a false behind alarm)"
+hasnt "after last anchored handoff" "no false behind alarm when there is no commit anchor"
 
 echo "result: $pass passed, $fail failed"
 [ "$fail" = 0 ]

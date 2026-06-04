@@ -430,9 +430,14 @@ def unflushed_commits(root, ark_text):
     unwritten flush, but we can refuse to let the next session believe a stale
     handoff is current — same contract as `verify`: make the gap visible.
 
-    Returns (count, head_short, capped). count 0 = current or undeterminable.
+    Returns (count, head_short, capped, tracked).
+      tracked=False -> the ark has no [commit:] anchor at all, so freshness can't
+        be tracked (count is 0; not an alarm, just unprovable — a test/file-only
+        ark is legitimate, it just can't be compared against the commit graph).
+      tracked=True, count>0 -> genuinely behind: commits landed after the newest
+        commit the handoff anchors.
     Walks at most WINDOW commits back; `capped` is True if we hit the wall
-    without finding an anchored commit (handoff anchors none, or is very old)."""
+    without matching an anchored commit."""
     WINDOW = 50
     try:
         out = subprocess.run(
@@ -440,19 +445,21 @@ def unflushed_commits(root, ark_text):
             cwd=root, capture_output=True, text=True,
         )
     except FileNotFoundError:
-        return 0, None, False
+        return 0, None, False, True
     if out.returncode != 0:
-        return 0, None, False
+        return 0, None, False, True
     hashes = out.stdout.split()
     if not hashes:
-        return 0, None, False
+        return 0, None, False, True
     anchored = [m.strip() for k, m in ANCHOR_RE.findall(ark_text) if k == "commit"]
+    if not anchored:
+        return 0, hashes[0][:12], False, False  # untracked, not behind
     count = 0
     for h in hashes:
         if any(h.startswith(a) or a.startswith(h[:7]) for a in anchored if a):
-            return count, hashes[0][:12], False
+            return count, hashes[0][:12], False, True
         count += 1
-    return count, hashes[0][:12], True  # no anchored commit found within the window
+    return count, hashes[0][:12], True, True  # anchored, but no match in window
 
 
 def ago(ts):
@@ -553,8 +560,11 @@ def _ark_line(a, indent, root):
           % (indent, _c(DIM, "↳ stopped:"), _c(DIM, stopped)))
     if head:
         print("%s    %s %s" % (indent, _c(DIM, "↳ head:   "), _c(DIM, head)))
-    n, head_hash, capped = unflushed_commits(root, a["text"])
-    if n > 0:
+    n, head_hash, capped, tracked = unflushed_commits(root, a["text"])
+    if not tracked and not sess:
+        # v1 arks with no commit anchor: can't track freshness, say so quietly
+        print("%s    %s" % (indent, _c(DIM, "↳ (no [commit:] anchor — freshness untracked)")))
+    elif tracked and n > 0:
         plural = "" if n == 1 else "s"
         print("%s    %s"
               % (indent, _c(YELLOW, "⚠ %d%s commit%s after last anchored handoff (HEAD %s) — "
