@@ -26,5 +26,11 @@ why: The user wanted a public face for orca to share on GitHub — a clean bilin
 next: verify the published Pages URL https://socaseinpoint.github.io/orca-light/ renders correctly on a real device (done-when 4); confirm repo Pages source points at `docs/`.
 head: Tree clean, all four site commits on main. This work predated the dashboard anchor (22ec4c2) yet sat in neither flushed Trail block until now. Watch: GitHub Pages branch-source must point at `docs/` for the move to take effect.
 
+### 2026-06-04 — tooling section added (dashboard as optional companion)
+done: Added a "companion: the dashboard" section to the landing (§07) + an "optional: the dashboard" section to get-started (§03), bilingual RU/EN in the existing classes. Framed deliberately as an EXTERNAL, read-only, optional add-on — the very thing core never grows (ties back to §06 "no cross-project"): one command, reactive over SSE, reads `.orca/` and writes nothing, deletable with no effect on orca. Kept out of the main nav so it doesn't crowd the core pitch. [commit:23f058a] [file:docs/index.html:236]
+why: The user wanted tooling/dashboard info on the site but explicitly "не должно мешаться с основным" — so it's a clearly-delimited optional section, not woven into the core narrative, and the copy stresses it is NOT core. Dropped a redundant `.dim` span from the landing h2 (site CSS only defines `p.prose.dim`, not a bare `.dim`).
+next: real-device render check of the published Pages URL (done-when 4) still open; then 04-site is closeable.
+head: Pages will pick the new sections up on next deploy from `docs/`. The tooling copy mirrors the dashboard's actual contract (read-only, side-effects index) so site and tool stay honest with each other.
+
 ## Log
 <!-- ark state transitions, append-only -->
