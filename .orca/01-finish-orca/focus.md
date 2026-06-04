@@ -24,12 +24,14 @@ project-local focus-dir model, and all cross-project machinery (registry, `ark-r
 - **side-effects** = the real-world result lives OUTSIDE orca (code repo, Jira, SaaS);
   orca only points at it via `done:` anchors — a domain-agnostic side-effect ledger.
 
-Done-when 1–4 are all met; the legacy ark + global decisions are migrated in. Only
-open thread: the docs (README/GUIDE/PRINCIPLES/spec) still describe the old
-global/thread model — a fresh ark, not on the readiness path.
+Done-when 1–4 are all met, the legacy ark + global decisions are migrated in, AND
+the docs are refreshed to the new model. Nothing open on this focus — it is a
+candidate for `orca done 01-finish-orca` (the user's call on whether orca is
+"finished" for now).
 
 ## arks
 - `arks/done/01-collapse-binary.md` — done — collapsed the binary + skill to git-form.
+- `arks/done/02-docs-refresh.md` — done — rewrote all docs to the focus-dir model.
 - `arks/done/00-verify-resume.md` — done — legacy resume-continuity ark, migrated in.
 
 ## Trail
@@ -69,3 +71,4 @@ head: This block was written by the same model it describes — `orca verify .or
 <!-- ark state transitions, append-only -->
 2026-06-04  01-collapse-binary  → in-work  (first ark of the finish-orca focus)
 2026-06-04  01-collapse-binary  → done
+2026-06-04  02-docs-refresh  → done
