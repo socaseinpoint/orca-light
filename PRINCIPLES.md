@@ -77,7 +77,10 @@ the squeeze. **Test:** "is this the current ark's work?" If no → park it, don'
 now. *(A strong default, not a hard lock: an urgent interrupt may switch — but
 switching is named, not silent.)* **Mechanism:** orca *nudges* (never forces, per #6)
 "looks done — archive and start fresh" when the ark's `done-when` is checkable and
-green; stays silent when `done-when` can't be checked (no false nags, per #5).
+green; stays silent when `done-when` can't be checked (no false nags, per #5). The
+nudge **bundles the runway**: alongside "close the session" it surfaces where to pick
+up next — the other open arks, parked (not-started) arks, and any residual `next:` —
+so closing is never a dead end. You close *because* you can see the restart point.
 
 ## 8. orca teaches its own model — nudge correct use, don't just store files
 
