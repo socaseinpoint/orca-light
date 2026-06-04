@@ -424,7 +424,21 @@ def _load_docs(directory):
 
 
 def iter_arks(project_root):
+    # _load_docs globs arks/*.md (flat, non-recursive) — archived arks live one
+    # level down in arks/archive/, so they fall out of every live view for free.
     return _load_docs(os.path.join(project_root, ".orca", "arks"))
+
+
+def find_ark_path(root, slug):
+    """Resolve <slug> to its ark file, live OR archived. Location is the terminal
+    'done' truth: a live ark sits at arks/<slug>.md, an archived one at
+    arks/archive/<slug>.md. By-slug commands (archive/trail/ark-root) check both."""
+    base = os.path.join(root, ".orca", "arks")
+    for cand in (os.path.join(base, slug + ".md"),
+                 os.path.join(base, "archive", slug + ".md")):
+        if os.path.isfile(cand):
+            return cand
+    return None
 
 
 def iter_threads(home):
@@ -432,6 +446,12 @@ def iter_threads(home):
 
 
 def is_open(ark):
+    # Location is the terminal truth: anything under arks/archive/ is closed.
+    # The legacy `state: archived` field is still honored on read so old arks that
+    # predate the subdir convention stay hidden — back-compat grace, not a mirror
+    # orca maintains (archive no longer writes that field; it moves the file).
+    if os.path.basename(os.path.dirname(ark["path"])) == "archive":
+        return False
     return ark["fields"].get("state", "active").lower() != "archived"
 
 
@@ -639,54 +659,26 @@ def cmd_decide(args):
     return 0
 
 
-STATE_LINE_RE = re.compile(r"^state:\s*(.*)$", re.IGNORECASE)
-
-
 def cmd_archive(args):
-    """Flip an ark's `state:` to archived — the one terminal 'done' flag for a unit
-    of work. Single writer: rewrites only this ark file, only its state line. Arks
-    are what get archived; their `## sessions` blocks stay append-only and untouched
-    (closing the ark is not closing its history). Idempotent — re-archiving is fine.
-    'active' (or no state field) is the only non-terminal state; archived is the end."""
+    """Move an ark into arks/archive/ — location is the one terminal 'done' truth,
+    no `state:` flip. Single writer: it renames this one ark file and nothing else;
+    the file content (its append-only `## sessions`) moves byte-for-byte, never
+    rewritten (closing the ark is not closing its history). Archived arks fall out
+    of every live view because those glob arks/*.md, flat. Idempotent — re-archiving
+    an ark already in the subdir is a no-op."""
     root = find_repo_root(os.getcwd())
-    path = os.path.join(root, ".orca", "arks", args.slug + ".md")
-    if not os.path.isfile(path):
+    base = os.path.join(root, ".orca", "arks")
+    live = os.path.join(base, args.slug + ".md")
+    archived = os.path.join(base, "archive", args.slug + ".md")
+    if os.path.isfile(archived) and not os.path.isfile(live):
+        print(_c(DIM, "archive: '%s' already archived" % args.slug))
+        return 0
+    if not os.path.isfile(live):
         print(_c(RED, "archive: no such ark: %s (.orca/arks/%s.md)" % (args.slug, args.slug)))
         return 2
-    with open(path, "r", errors="replace") as fh:
-        lines = fh.readlines()
-
-    new, replaced, in_header = [], False, True
-    for raw in lines:
-        # only the leading field block carries `state:`; stop touching lines once a
-        # `## section` starts, so a stray "state:" inside prose is never rewritten.
-        if in_header and raw.lstrip().startswith("##"):
-            in_header = False
-        if in_header and not replaced:
-            m = STATE_LINE_RE.match(raw)
-            if m:
-                if m.group(1).strip().lower() == "archived":
-                    print(_c(DIM, "archive: '%s' already archived" % args.slug))
-                    return 0
-                new.append("state: archived\n")
-                replaced = True
-                continue
-        new.append(raw)
-
-    if not replaced:
-        # no state field at all -> ark defaulted to active; insert the terminal flag
-        # right after the title heading so the field block stays together.
-        out, inserted = [], False
-        for raw in new:
-            out.append(raw)
-            if not inserted and raw.startswith("#"):
-                out.append("state: archived\n")
-                inserted = True
-        new = out if inserted else (["state: archived\n"] + new)
-
-    with open(path, "w") as fh:
-        fh.writelines(new)
-    print(_c(GREEN, "archived: ") + args.slug)
+    os.makedirs(os.path.join(base, "archive"), exist_ok=True)
+    os.rename(live, archived)
+    print(_c(GREEN, "archived: ") + args.slug + _c(DIM, "  -> arks/archive/%s.md" % args.slug))
     return 0
 
 
@@ -767,7 +759,7 @@ def cmd_ark_root(args):
         if not p or p in seen:
             continue
         seen.add(p)
-        if os.path.isfile(os.path.join(p, ".orca", "arks", args.slug + ".md")):
+        if find_ark_path(p, args.slug):
             print(p)
             return 0
     sys.stderr.write("ark-root: no project owns ark '%s' (cwd repo or registry)\n" % args.slug)
@@ -780,8 +772,8 @@ def cmd_trail(args):
     trail shows them all, in the order they happened. Derived on read from the v2
     `## sessions` blocks — nothing stored, nothing rewritten."""
     root = find_repo_root(os.getcwd())
-    path = os.path.join(root, ".orca", "arks", args.slug + ".md")
-    if not os.path.isfile(path):
+    path = find_ark_path(root, args.slug)
+    if not path:
         print(_c(RED, "trail: no such ark: %s (.orca/arks/%s.md)" % (args.slug, args.slug)))
         return 2
     with open(path, "r", errors="replace") as fh:
