@@ -5,80 +5,119 @@ sessions so a new session starts productive instead of reconstructing context by
 
 Standalone repo. It does **not** depend on ECC code — it only borrows conventions
 (hook names, session-file shape). ECC owns skills/agents/rules; orca-light owns
-arcs, decisions (why), and the trusted handoff between sessions.
+focuses, decisions (why), and the trusted handoff between sessions.
 
 **New here?** See [GUIDE.md](GUIDE.md) — install → init → a narrated walkthrough of
 the whole flow. The standing design lenses live in [PRINCIPLES.md](PRINCIPLES.md).
 
-## The one idea: files are state, views are derived
+## The one idea: state is project-local, like `.git/`
 
-- **One writer per file.** Each ark (`.orca/arks/<slug>.md`) owns its own file. No
-  shared write → no races → no locks.
-- **Views computed on read.** `orca now` is rendered from arks when you ask.
-  Nothing derived is stored, so nothing can desync.
-- **Arks are archived, never flipped.** No `planned→review→done` status field. State
-  is the file; history is git.
+State lives entirely in `<project>/.orca/`. The binary is global on your PATH; there
+is **zero global state** — no `~/.orca`, no registry, no cross-project anything. Two
+projects never see each other's continuity.
+
+- **One writer per file.** Each focus (`focus.md`) and each ark (`arks/<slug>.md`)
+  owns its own file. No shared write → no races → no locks.
+- **Views computed on read.** `orca now` is rendered from the in-work focuses in
+  *this* repo when you ask. Nothing derived is stored, so nothing can desync.
+- **State is folder location, never a flip.** No `planned→review→done` status field.
+  `orca done` *moves* the file/dir; history is git.
 
 No locks, no lifecycle machine, no ID allocator, no scheduler, no control/worker
 membrane. That stack is exactly what killed the previous orca — see the archived
 `LESSON.md`. orca-light is the lightest thing that works.
 
-## Trust first: proof-handoff
-
-The first thing built, and the thing everything else rests on. A handoff is claims +
-checkable anchors (`file:line`, `commit`, `test`). `orca verify` re-checks them against
-reality and fails on fabrication. Until this is trustworthy, nothing is extended.
+## Topology
 
 ```
-orca verify            # check the freshest ark's handoff
+<project>/.orca/
+  <NN-name>/                 in-work FOCUS (the atom)
+    focus.md                 header (intent · kind · state · updated)
+                             + ## done-when
+                             + ## Now      mutable current orientation
+                             + ## arks
+                             + ## Trail    append-only session blocks
+                             + ## Log      ark transitions
+    decisions.md             append-only WHY layer for this focus
+    arks/<slug>.md           in-work ARK (a deliverable under the focus)
+                             header + ## done-when + ## Trail
+    arks/done/<slug>.md      done ark
+  done/<NN-name>/            done focus (the whole dir moved here)
+```
+
+A **focus** is the atom you sit down to. An **ark** is a deliverable under it. Two
+states exist, and they are expressed by *where the file lives*, never by a `state:`
+field. `orca done <slug>` does the move: an ark goes to `arks/done/` (plus a `## Log`
+line in its focus); a focus goes to `.orca/done/`.
+
+## Trust first: proof-handoff
+
+The first thing built, and the thing everything else rests on. The handoff unit is a
+`## Trail` block:
+
+```
+### <date> — <title>
+done: <what happened>. [anchors]
+why:  <rationale>
+next: <single next step>
+head: <what's in flight>
+```
+
+`done:` is the **proven zone** — it must carry at least one anchor. `why` / `next` /
+`head` are labeled narrative. Anchors are `[file:PATH:LINE]`, `[commit:HASH]`,
+`[test:CMD]`. `orca verify` re-checks them against reality and fails on fabrication.
+Until this is trustworthy, nothing is extended.
+
+```
+orca verify            # check the freshest in-work focus's latest Trail block
 orca verify --no-tests # file/commit anchors only
 ```
 
-See `spec/handoff.md` for the format.
+`verify` only checks the **latest** Trail block: an accumulating trail can't keep
+historical `file:line` anchors green as code moves, so prefer immutable `commit`
+anchors. See `spec/handoff.md` for the format.
 
 ## Command surface
 
 ```
-orca now                  resume view: threads + open arks + where you stopped + staleness
-orca verify [--judge]     check a handoff's anchors against reality (--judge adds a cheap grader)
-orca trail <slug>         one ark's sessions oldest->newest — the chain of thought
-orca archive <slug>       move an ark to arks/archive/ (terminal 'done'; location is the truth)
-orca report [--since Nd]  cross-project activity log from dated session blocks
-orca decide "<w> — <why>" append a decision to .orca/decisions.md (the WHY layer)
-orca init · orca gate     scaffold tiers · non-blocking "is the handoff proven?" warn
+orca now                  resume view (this repo): each in-work focus's ## Now +
+                          open arks + where you stopped + a staleness warning
+orca verify [FILE]        check a handoff's anchors (default FILE = freshest focus.md)
+  [--judge] [--no-tests]    --judge adds a cheap grader; --no-tests skips test anchors
+orca decide "<w> — <why>" append a decision to the in-work focus's decisions.md
+orca trail <slug>         render a focus's or ark's ## Trail oldest->newest
+orca done <slug>          finish an ark or focus by moving it (terminal 'done')
+orca init · orca gate     scaffold .orca/ · non-blocking "is the latest Trail proven?" warn
 ```
+
+`orca now` is strictly project-local — it lists every in-work focus in *this* repo and
+does no cross-project roll-up. `orca gate` exits 1 if the freshest focus's latest Trail
+block doesn't verify (a warn, it never blocks).
 
 ## Resume (stop doing handoffs by hand)
 
 The `orca-resume` skill (`skills/orca-resume/`) reconstructs continuity you didn't
-write down. On sit-down it shows open arks and forks (continue / archive+new / new);
-on *continue* it dispatches a subagent that reads the **prior session transcript** +
-git log and compresses them into one verified 4-layer block (`done` with anchors /
-`why` / `next` / `head`), appends it to the ark, and runs `orca verify`. The
-transcript never enters the main context window. See `spec/resume.md`.
-
-## Topology
-
-| Tier | Path | Holds |
-|---|---|---|
-| meta | `~/.orca/` (own git, cross-project) | `threads/<thread>.md`, `decisions.md`, `trail-archive.md` |
-| project | `<project>/.orca/` (committed with repo) | `arks/<slug>.md`, `decisions.md` |
+write down — project-local, no ark-root, no registry. On sit-down it shows the in-work
+focuses and forks (continue / done+new / new); on *continue* it dispatches a subagent
+that reads the **prior session transcript** + git log and compresses them into one
+verified 4-layer Trail block (`done` with anchors / `why` / `next` / `head`), appends
+it to the in-work focus, and runs `orca verify`. The transcript never enters the main
+context window. See `spec/resume.md`.
 
 ## Hooks (additive to ECC)
 
 | Hook | Does |
 |---|---|
-| SessionStart | inject `orca now` as context |
-| Stop | `orca verify --no-tests`, warns if the handoff doesn't hold (never blocks) |
-| PreCompact | flush `orca now` before compression |
+| SessionStart | print `orca now` + a protocol nudge |
+| Stop | run `orca gate` — warns if the latest Trail doesn't hold (never blocks) |
+| PreCompact | print `orca now` before compression |
 
-Scripts in `hooks/`; wiring snippet in `hooks/README.md`. The CLI never writes
-config — wiring is a human `/config` step, by design.
+Scripts in `hooks/`; install with `python3 bin/install-hooks`.
 
 ## Status
 
 - [x] repo scaffold + `bin/orca`
 - [x] proof-handoff verifier (`orca verify`) — the trust core
-- [x] derived view (`orca now`) — computed on read
-- [x] meta-tier `~/.orca/` + `orca init`
-- [x] hooks (`hooks/*.sh`, additive; wiring is manual)
+- [x] derived view (`orca now`) — computed on read, project-local
+- [x] project-local `.orca/` + `orca init`
+- [x] hooks (`hooks/*`, additive; install via `bin/install-hooks`)

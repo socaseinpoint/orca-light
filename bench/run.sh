@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
 # orca-light benchmark — exercises the real flow on a throwaway `tempo` project
 # and prints numbers for the 5 things orca claims to deliver. Fast + reproducible.
+# Project-local model: state lives in <project>/.orca/ only (no ~/.orca).
 #
 #   B1 context cost   bytes/words/~tokens of `orca now` (vs claude-mem's dump)
 #   B2 trust          fabrication catch-rate of `orca verify`
 #   B3 latency        wall time of now / verify (the hook budget)
-#   B4 resume         does `orca now` alone carry done-when + where-you-stopped
+#   B4 resume         does `orca now` alone carry intent + where-you-stopped
 #   B5 parallel       two arks written concurrently both survive intact
 set -u
 
 ORCA="$(cd "$(dirname "$0")/.." && pwd)/bin/orca"
 TMP="$(mktemp -d)"
-export ORCA_HOME="$TMP/meta/.orca"
 PROJ="$TMP/tempo"
 trap 'rm -rf "$TMP"' EXIT
 
@@ -39,33 +39,46 @@ HASH="$(git rev-parse --short HEAD)"
 
 "$ORCA" init >/dev/null 2>&1
 
-# --- thread (goal) + two parallel task arks with REAL anchors -----------------
-cat > "$ORCA_HOME/threads/tempo-mvp.md" <<MD
-# thread: tempo-mvp
-goal: ship a c/f/k temperature CLI
+# --- one in-work FOCUS (the campaign goal) + two parallel task arks, REAL anchors
+mkdir -p .orca/01-tempo/arks
+cat > .orca/01-tempo/focus.md <<MD
+# focus 01: tempo-mvp
+intent: ship a c/f/k temperature CLI
+kind: finite
+state: in-work
 updated: 2026-06-04
+
+## Now
+core conversions land; the argparse layer is the open front.
+
+## Trail
+### 2026-06-04
+done: scaffolded the conversion core. [commit:$HASH]
+next: build the CLI parse layer
 MD
 
-cat > .orca/arks/convert-core.md <<MD
+cat > .orca/01-tempo/arks/convert-core.md <<MD
 # ark: convert-core
-thread: tempo-mvp
-done-when: c<->f<->k roundtrip passes
-state: active
+focus: 01-tempo
+intent: c<->f<->k roundtrip passes
+state: in-work
 
-## handoff
-- core conversions implemented in tempo.py. [file:tempo.py:4]
-- committed the core. [commit:$HASH]
-- roundtrip test green. [test:python3 -c "from tempo import c2f,f2c,c2k,k2c; assert abs(f2c(c2f(100))-100)<1e-9 and c2f(0)==32"]
+## Trail
+### 2026-06-04
+done: core conversions implemented + committed + roundtrip green. [file:tempo.py:4] [commit:$HASH] [test:python3 -c "from tempo import c2f,f2c,c2k,k2c; assert abs(f2c(c2f(100))-100)<1e-9 and c2f(0)==32"]
+next: nothing — core is done
 MD
 
-cat > .orca/arks/cli-parse.md <<MD
+cat > .orca/01-tempo/arks/cli-parse.md <<MD
 # ark: cli-parse
-thread: tempo-mvp
-done-when: bad CLI input exits non-zero with a message
-state: active
+focus: 01-tempo
+intent: bad CLI input exits non-zero with a message
+state: in-work
 
-## handoff
-- BLOCKER: argparse layer not started yet, design open.
+## Trail
+### 2026-06-04
+done: sketched the surface. [file:tempo.py:1]
+head: BLOCKER argparse layer not started yet, design open.
 MD
 
 echo "================ orca-light benchmark (project: tempo) ================"
@@ -91,37 +104,19 @@ echo "    orca verify (w/ tests) ${VT_MS}ms"
 # --- B2 trust: good ark PASS, then 4 fabrication modes each FAIL --------------
 pass=0; tot=0
 chk() { tot=$((tot+1)); if [ "$1" = "$2" ]; then echo "    ✓ $3"; pass=$((pass+1)); else echo "    ✗ $3 (got rc=$1 want $2)"; fi; }
-"$ORCA" verify .orca/arks/convert-core.md --no-tests >/dev/null 2>&1; chk $? 0 "honest ark      -> PASS"
-"$ORCA" verify .orca/arks/convert-core.md           >/dev/null 2>&1; chk $? 0 "honest +tests   -> PASS"
+"$ORCA" verify .orca/01-tempo/arks/convert-core.md --no-tests >/dev/null 2>&1; chk $? 0 "honest ark      -> PASS"
+"$ORCA" verify .orca/01-tempo/arks/convert-core.md           >/dev/null 2>&1; chk $? 0 "honest +tests   -> PASS"
 
-cat > .orca/arks/fake-line.md <<MD
-# ark: fake
-## handoff
-- claims a line that does not exist. [file:tempo.py:9999]
-MD
-"$ORCA" verify .orca/arks/fake-line.md --no-tests >/dev/null 2>&1; chk $? 1 "fake file:line  -> FAIL"
-
-cat > .orca/arks/fake-commit.md <<MD
-# ark: fake
-## handoff
-- claims a commit that never was. [commit:deadbeef]
-MD
-"$ORCA" verify .orca/arks/fake-commit.md --no-tests >/dev/null 2>&1; chk $? 1 "fake commit     -> FAIL"
-
-cat > .orca/arks/fake-test.md <<MD
-# ark: fake
-## handoff
-- claims a passing test that fails. [test:python3 -c "import sys;sys.exit(1)"]
-MD
-"$ORCA" verify .orca/arks/fake-test.md >/dev/null 2>&1; chk $? 1 "fake test        -> FAIL"
-
-cat > .orca/arks/bare.md <<MD
-# ark: bare
-## handoff
-- pure prose, no anchor, trust me bro.
-MD
-"$ORCA" verify .orca/arks/bare.md --no-tests >/dev/null 2>&1; chk $? 1 "bare claim       -> FAIL"
-rm -f .orca/arks/fake-*.md .orca/arks/bare.md
+fake() { printf '# ark: fake\nfocus: 01-tempo\nstate: in-work\n\n## Trail\n### 2026-06-04\ndone: %b\n' "$1" > .orca/01-tempo/arks/fake.md; }
+fake "claims a line that does not exist. [file:tempo.py:9999]"
+"$ORCA" verify .orca/01-tempo/arks/fake.md --no-tests >/dev/null 2>&1; chk $? 1 "fake file:line  -> FAIL"
+fake "claims a commit that never was. [commit:deadbeef]"
+"$ORCA" verify .orca/01-tempo/arks/fake.md --no-tests >/dev/null 2>&1; chk $? 1 "fake commit     -> FAIL"
+fake "claims a passing test that fails. [test:python3 -c \"import sys;sys.exit(1)\"]"
+"$ORCA" verify .orca/01-tempo/arks/fake.md >/dev/null 2>&1; chk $? 1 "fake test        -> FAIL"
+fake "pure prose, no anchor, trust me bro."
+"$ORCA" verify .orca/01-tempo/arks/fake.md --no-tests >/dev/null 2>&1; chk $? 1 "bare claim       -> FAIL"
+rm -f .orca/01-tempo/arks/fake.md
 echo
 echo "B2 trust: $pass/$tot fabrication-modes caught"
 
@@ -129,24 +124,24 @@ echo "B2 trust: $pass/$tot fabrication-modes caught"
 "$ORCA" now > "$TMP/now.txt" 2>&1
 r=0; rt=0
 has() { rt=$((rt+1)); if grep -qF "$1" "$TMP/now.txt"; then r=$((r+1)); echo "    ✓ $2"; else echo "    ✗ $2"; fi; }
-has "ship a c/f/k" "goal present"
-has "convert-core" "task 1 listed"
-has "cli-parse"    "task 2 listed (parallel)"
-has "done-when:"   "stop-condition present"
-has "stopped:"     "where-you-stopped present"
-has "blocker"      "blocker surfaced"
+has "ship a c/f/k"   "focus intent (goal) present"
+has "convert-core"   "task 1 listed"
+has "cli-parse"      "task 2 listed (parallel)"
+has "argparse layer" "focus orientation (## Now body) present"
+has "stopped:"       "where-you-stopped present"
+has "blocker"        "blocker surfaced"
 echo
 echo "B4 resume fidelity: $r/$rt resume-essentials present in 'orca now'"
 
 # --- B5 parallel safety: two arks written at once, both intact ---------------
-( for i in $(seq 1 50); do printf '# ark: p1\nthread: tempo-mvp\ndone-when: a\nstate: active\n\n## handoff\n- step %s. [file:tempo.py:1]\n' "$i" > .orca/arks/par1.md; done ) &
-( for i in $(seq 1 50); do printf '# ark: p2\nthread: tempo-mvp\ndone-when: b\nstate: active\n\n## handoff\n- step %s. [file:tempo.py:2]\n' "$i" > .orca/arks/par2.md; done ) &
+( for i in $(seq 1 50); do printf '# ark: p1\nfocus: 01-tempo\nstate: in-work\n\n## Trail\n### 2026-06-04\ndone: step %s. [file:tempo.py:1]\n' "$i" > .orca/01-tempo/arks/par1.md; done ) &
+( for i in $(seq 1 50); do printf '# ark: p2\nfocus: 01-tempo\nstate: in-work\n\n## Trail\n### 2026-06-04\ndone: step %s. [file:tempo.py:2]\n' "$i" > .orca/01-tempo/arks/par2.md; done ) &
 wait
 ok5=0
-"$ORCA" verify .orca/arks/par1.md --no-tests >/dev/null 2>&1 && ok5=$((ok5+1))
-"$ORCA" verify .orca/arks/par2.md --no-tests >/dev/null 2>&1 && ok5=$((ok5+1))
+"$ORCA" verify .orca/01-tempo/arks/par1.md --no-tests >/dev/null 2>&1 && ok5=$((ok5+1))
+"$ORCA" verify .orca/01-tempo/arks/par2.md --no-tests >/dev/null 2>&1 && ok5=$((ok5+1))
 "$ORCA" now >/dev/null 2>&1 && ok5=$((ok5+1))   # view doesn't choke on concurrent writes
-rm -f .orca/arks/par1.md .orca/arks/par2.md
+rm -f .orca/01-tempo/arks/par1.md .orca/01-tempo/arks/par2.md
 echo
 echo "B5 parallel safety: $ok5/3 (both arks intact + view renders after concurrent writes)"
 

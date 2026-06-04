@@ -11,7 +11,7 @@ already settled 2+ decisions). State the principle, then *why*, then its *test*.
 
 ## 1. Files are state; views are derived on read
 
-Nothing computed is stored. `orca now`, `trail`, `report` are *rendered* from the
+Nothing computed is stored. `orca now`, `trail`, `gate` are *rendered* from the
 files when asked. **Why:** stored-derived data desyncs; recomputing can't. **Test:**
 if a feature caches a view, it's wrong — derive it instead.
 
@@ -23,8 +23,9 @@ scheduler, no lifecycle machine. That stack is what killed the previous orca.
 
 ## 3. Meaning lives in directory + content, never in the filename
 
-Kind is encoded by **location** (`arks/*.md`, `arks/archive/*.md`, `threads/*.md`);
-attributes by **fields** in the file. The filename is the **slug** — a stable
+State is encoded by **location** (in-work `.orca/<focus>/` and `<focus>/arks/*.md`;
+done `.orca/done/<focus>/` and `<focus>/arks/done/*.md`); attributes by **fields**
+in the file. The filename is the **slug** — a stable
 identity, nothing more. **Why:** commands address by `<slug>`; encoding date/type/
 suffix into the name forces either indirection (slug ≠ filename) or ugly slugs, and
 duplicates what the dir already says. **Test:** before putting metadata in a
@@ -32,11 +33,13 @@ filename, ask "does the directory or a field already carry this?" — it almost 
 does. *(Settled the date-prefix, the type-tag, and the `.orca.md`-suffix questions.)*
 
 > **Corollary for tooling (dashboards, exporters):** consume orca's *structure*, not
-> filename patterns — registry (`~/.orca/`) → project roots → `.orca/` topology →
-> parse the schema (header fields, `## sessions`, anchors). The registry is a better
-> index than any glob, and a tool must understand the schema regardless of filename,
-> so a suffix buys nothing on the hard part and breaks the moment a slug has a dot.
-> A filename glob is what you reach for when you lack a structured index; orca has one.
+> filename patterns — scan `.orca/` topology (focus dirs → `arks/` → done/ subdirs) →
+> parse the schema (header fields, `## Trail` blocks, anchors). A tool must understand
+> the schema regardless of filename, so a suffix buys nothing on the hard part and
+> breaks the moment a slug has a dot. A filename glob is what you reach for when you
+> lack a structured index; orca's directory layout *is* the index. (A cross-project
+> overview is one such external tool — it scans many repos' `.orca/` dirs; orca core
+> stays project-local and never learns it exists.)
 
 ## 4. Trust before convenience
 
@@ -85,7 +88,7 @@ circular: the brackets are self-stated, but `orca verify` grounds their anchors
 against git/files (#4), so a session that overclaims at its outro still goes red. **Test:** "is this the current ark's work?" If no → park it, don't do it
 now. *(A strong default, not a hard lock: an urgent interrupt may switch — but
 switching is named, not silent.)* **Mechanism:** orca *nudges* (never forces, per #6)
-"looks done — archive and start fresh" when the ark's `done-when` is checkable and
+"looks done — finish it (`orca done`) and start fresh" when the ark's `done-when` is checkable and
 green; stays silent when `done-when` can't be checked (no false nags, per #5). The
 nudge **bundles the runway**: alongside "close the session" it surfaces where to pick
 up next — the other open arks, parked (not-started) arks, and any residual `next:` —
@@ -94,7 +97,7 @@ so closing is never a dead end. You close *because* you can see the restart poin
 ## 8. orca teaches its own model — nudge correct use, don't just store files
 
 orca understands its own idea and gently steers the user toward it. Its surfaces are
-didactic by design: the fork (continue / archive+new / new) teaches the lifecycle;
+didactic by design: the fork (continue / finish+new / new) teaches the lifecycle;
 `now`'s "where you stopped" models correct continuation; a red `verify` teaches
 trust-before-convenience; the done-when nudge teaches one-session-one-task. A passive
 filestore lets the user drift; orca makes the right move the obvious one. **Why:** the
