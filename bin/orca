@@ -44,7 +44,7 @@ Usage:
   orca trail <slug>              one focus's (or ark's) Trail, oldest->newest
   orca done <slug>               finish an ark (-> arks/done/ + Log line) or a focus (-> .orca/done/)
   orca gate                      warn (exit 1) if the freshest focus's latest Trail block isn't verified
-  orca session record|pending|compressed   session-context ledger (makes resume live-aware)
+  orca session record|pending|compressed|prune   session-context ledger (makes resume live-aware)
 
 The session ledger (the MUST-tier correctness layer): the SessionStart hook records
 each session's id + EXACT transcript path + cwd under .orca/sessions/ (ephemeral,
@@ -919,6 +919,33 @@ def _session_mark(args):
     return 0
 
 
+def _session_prune(args):
+    """Drop already-folded session records older than --days. The ledger is
+    ephemeral (gitignored) but never self-collects, so compressed records would
+    otherwise pile up one-per-session forever. Only `compressed` records are
+    eligible — an uncompressed record may still be owed a Trail block, so it is
+    never swept by age. Explicit + opt-in (no auto-sweep in the hot hook path)."""
+    root = find_repo_root(os.getcwd())
+    sdir = sessions_dir(root)
+    if not os.path.isdir(sdir):
+        return 0
+    cutoff = time.time() - args.days * 86400
+    removed = 0
+    for f in glob.glob(os.path.join(sdir, "*.json")):
+        r = _read_json(f)
+        if not r or not r.get("compressed"):
+            continue                      # never sweep an unfolded record
+        if (r.get("started") or 0) >= cutoff:
+            continue                      # too young
+        try:
+            os.remove(f)
+            removed += 1
+        except OSError:
+            pass
+    print(_c(GREEN, "pruned: ") + "%d compressed record(s) older than %dd" % (removed, args.days))
+    return 0
+
+
 def cmd_session(args):
     action = getattr(args, "action", None)
     if action == "record":
@@ -927,7 +954,9 @@ def cmd_session(args):
         return _session_pending(args)
     if action == "compressed":
         return _session_mark(args)
-    sys.stderr.write("session: use record | pending | compressed <id>\n")
+    if action == "prune":
+        return _session_prune(args)
+    sys.stderr.write("session: use record | pending | compressed <id> | prune\n")
     return 2
 
 
@@ -966,12 +995,14 @@ def main(argv=None):
     g.add_argument("--timeout", type=int, default=120, help="per-test timeout seconds")
     g.set_defaults(func=cmd_gate)
 
-    se = sub.add_parser("session", help="session-context ledger (makes resume live-aware): record | pending | compressed")
+    se = sub.add_parser("session", help="session-context ledger (makes resume live-aware): record | pending | compressed | prune")
     se_sub = se.add_subparsers(dest="action")
     se_sub.add_parser("record", help="record this session from the Claude Code hook JSON on stdin (SessionStart)")
     se_sub.add_parser("pending", help="list prior sessions safe to compress (excludes current + live + already-folded + other projects)")
     se_c = se_sub.add_parser("compressed", help="mark a session's transcript as folded into a Trail block")
     se_c.add_argument("id", help="session id")
+    se_p = se_sub.add_parser("prune", help="drop already-folded session records older than --days (default 30)")
+    se_p.add_argument("--days", type=int, default=30, help="age threshold in days (default 30)")
     se.set_defaults(func=cmd_session)
 
     args = p.parse_args(argv)

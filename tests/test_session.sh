@@ -65,6 +65,16 @@ hasnt "OTHER"              "other-project session absent entirely"
 "$ORCA" session pending > /tmp/sp 2>&1
 hasnt "pending"$'\t'"PRIOR" "compressing PRIOR drops it from pending (set converges)"
 
+# --- prune drops only OLD + COMPRESSED records, never an unfolded one ---
+# PRIOR is compressed (above); age its record's `started` past the 30d cutoff.
+agerec() { python3 -c "import json,time,sys; p=sys.argv[1]; r=json.load(open(p)); r['started']=int(time.time())-int(sys.argv[2])*86400; json.dump(r,open(p,'w'))" "$1" "$2"; }
+agerec .orca/sessions/PRIOR.json 40
+agerec .orca/sessions/CUR.json 40     # CUR is uncompressed; old but must survive (still owed a block)
+"$ORCA" session prune --days 30 >/dev/null
+[ ! -f .orca/sessions/PRIOR.json ] && ok "prune drops old compressed record" || bad "old compressed record not pruned"
+[ -f .orca/sessions/CUR.json ]    && ok "prune keeps uncompressed record (still owed a block)" || bad "prune wrongly dropped an unfolded record"
+[ -f .orca/sessions/COMP.json ]   && ok "prune keeps young compressed record" || bad "prune dropped a young compressed record"
+
 # --- record never breaks the hook: empty/no stdin -> exit 0, no crash ---
 printf '' | "$ORCA" session record; [ $? -eq 0 ] && ok "empty stdin -> exit 0 (hook-safe)" || bad "empty stdin should exit 0"
 echo 'not json at all' | "$ORCA" session record; [ $? -eq 0 ] && ok "garbage stdin -> exit 0 (hook-safe)" || bad "garbage stdin should exit 0"

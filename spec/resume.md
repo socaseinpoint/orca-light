@@ -154,6 +154,33 @@ launch dir to find a file. The only heuristic left is liveness (transcript mtime
 everything load-bearing (which set, which path, which project, folded-or-not) is
 deterministic.
 
+### Terminal case: a pending session with no landing zone
+
+The fold loop assumes there is an in-work focus to append each block to. There is
+one case where there isn't: you finished the last focus and `orca done`-moved it, so
+the session that *did the closing* is now `pending` (uncompressed) yet `orca now`
+shows nothing in-work. Its block has nowhere to land.
+
+Resume handles this **without confabulating a focus**: when `orca session pending`
+returns rows but there is **no in-work focus**, mark each pending session compressed
+(`orca session compressed <id>`) and move on — do **not** append a block to a closed
+focus in `.orca/done/` (that violates done-is-terminal and is ambiguous when more
+than one focus is done). The closing session's substance — the `done`-move — is
+already durable in git and the focus's `## Log` line; only the marginal
+`why/next/head` narrative of the close itself is dropped, which is an acceptable
+loss for the session whose only act was to finish. Without this, the orphan record
+would resurface as `pending` on every future resume and nag forever.
+
+### Retention: the ledger is pruned, not eternal
+
+Records under `.orca/sessions/` are ephemeral and gitignored, but nothing
+self-collects them — without a sweep, one `compressed:true` record per session would
+accumulate forever. `orca session prune [--days N]` (default 30) drops **only**
+folded records older than the threshold; an uncompressed record is never swept by age
+because it may still be owed a Trail block. Prune is explicit and opt-in — kept out
+of the hot SessionStart-record path so GC stays visible and under control (it can be
+wired into a periodic hook later if wanted).
+
 ## verify change
 
 - Scan the focus's `## Trail`. Check only the **latest** block: require ≥1 anchor on

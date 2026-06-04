@@ -112,6 +112,17 @@ with one real answer is anti-continuity (see the presentation contract above).
   1. **Continue an in-work focus** → Step 2.
   2. **Finish a done focus/ark, then start new** → `orca done <slug>`, then Step 3.
   3. **Start a new focus** → Step 3.
+- **No in-work focus at all** (everything was `orca done`-moved last session) — but
+  `orca session pending` returns rows. This is the **orphan terminal case**: the
+  session that did the closing has a block with nowhere to land. Do NOT append it to a
+  closed focus in `.orca/done/` (violates done-is-terminal; ambiguous with >1 done
+  focus). Instead mark each pending session compressed and drop its narrative — the
+  close's substance (the `done`-move) is already in git + the focus's `## Log`:
+  ```bash
+  orca session compressed <id>   # once per pending row — no landing zone to fold into
+  ```
+  Then proceed to Step 3 (start a new focus) or simply report "prior session closed
+  out — nothing in-work". Without this, the orphan nags as `pending` on every resume.
 
 ## Step 2 — continue: dispatch the compression subagent
 
