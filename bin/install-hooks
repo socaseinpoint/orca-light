@@ -1,0 +1,80 @@
+#!/usr/bin/env python3
+"""Wire orca-light's 3 hooks into ~/.claude/settings.json — additively & idempotently.
+
+Run it yourself (Claude is denied write to settings.json by design):
+    python3 <this-repo>/bin/install-hooks          # install
+    python3 <this-repo>/bin/install-hooks --dry    # show what it would do
+
+Safe: backs up settings.json first, appends to existing hook arrays (never
+replaces ECC/other hooks), and skips any hook already present. Re-runnable.
+"""
+import json
+import os
+import shutil
+import sys
+import time
+
+REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+SETTINGS = os.path.join(os.path.expanduser("~"), ".claude", "settings.json")
+EVENTS = {
+    "SessionStart": "session-start.sh",
+    "Stop": "stop.sh",
+    "PreCompact": "pre-compact.sh",
+}
+
+
+def cmd_for(script):
+    return os.path.join(REPO, "hooks", script)
+
+
+def already_present(arr, command):
+    for group in arr:
+        for h in group.get("hooks", []):
+            if h.get("command") == command:
+                return True
+    return False
+
+
+def main():
+    dry = "--dry" in sys.argv
+    if not os.path.exists(SETTINGS):
+        print("settings.json not found at %s" % SETTINGS)
+        return 1
+
+    with open(SETTINGS) as fh:
+        data = json.load(fh)
+
+    hooks = data.setdefault("hooks", {})
+    added = []
+    for event, script in EVENTS.items():
+        command = cmd_for(script)
+        if not os.path.exists(command):
+            print("  ! missing script: %s" % command)
+            continue
+        arr = hooks.setdefault(event, [])
+        if already_present(arr, command):
+            print("  = %s already wired" % event)
+            continue
+        arr.append({"hooks": [{"type": "command", "command": command}]})
+        added.append(event)
+        print("  + %s -> %s" % (event, command))
+
+    if dry:
+        print("\n--dry: nothing written.")
+        return 0
+    if not added:
+        print("\nnothing to do — all hooks already present.")
+        return 0
+
+    backup = SETTINGS + ".bak-" + time.strftime("%Y%m%d-%H%M%S")
+    shutil.copy2(SETTINGS, backup)
+    with open(SETTINGS, "w") as fh:
+        json.dump(data, fh, indent=2)
+        fh.write("\n")
+    print("\nwrote %s (backup: %s)" % (SETTINGS, os.path.basename(backup)))
+    print("restart Claude Code (or new session) to load the hooks.")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
