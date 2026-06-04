@@ -11,6 +11,7 @@ export interface Anchor {
 
 export interface TrailBlock {
   date: string;
+  time: string; // ISO committer-time of the block's first commit anchor, "" if none
   title: string;
   done: string;
   why: string;

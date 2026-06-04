@@ -1,6 +1,14 @@
 import type { TrailBlock as Block } from "../types";
 import { AnchorPill } from "./Badge";
 
+// "2026-06-04T12:01:33+02:00" -> "12:01" in the viewer's local zone.
+function hhmm(iso: string): string {
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime())
+    ? ""
+    : d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
+}
+
 // One node in the session chain: the 4-layer handoff block.
 export function TrailBlock({ block, last }: { block: Block; last: boolean }) {
   return (
@@ -11,6 +19,7 @@ export function TrailBlock({ block, last }: { block: Block; last: boolean }) {
       <div className="tb-body">
         <div className="tb-head">
           <span className="tb-date">{block.date}</span>
+          {block.time && <span className="tb-time">{hhmm(block.time)}</span>}
           {block.title && <span className="tb-title">{block.title}</span>}
         </div>
 

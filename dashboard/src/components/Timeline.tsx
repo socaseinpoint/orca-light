@@ -3,7 +3,7 @@ import { StateBadge } from "./Badge";
 import { TrailBlock } from "./TrailBlock";
 
 // The TIMELINE view: a focus's intent + done-when, then the session chain
-// (Trail blocks, newest last) and the ark-transition Log.
+// (Trail blocks rendered newest-first) and the ark-transition Log.
 export function Timeline({ focus }: { focus: Focus }) {
   return (
     <div className="tl">
@@ -53,7 +53,10 @@ export function Timeline({ focus }: { focus: Focus }) {
         {focus.trail.length === 0 ? (
           <p className="tl-empty">No Trail blocks yet — this focus hasn't been handed off.</p>
         ) : (
-          focus.trail.map((b, i) => <TrailBlock key={i} block={b} last={i === focus.trail.length - 1} />)
+          // Newest first: reverse the file-order (append-only, newest last) for display.
+          [...focus.trail].reverse().map((b, i, arr) => (
+            <TrailBlock key={arr.length - 1 - i} block={b} last={i === arr.length - 1} />
+          ))
         )}
       </section>
 

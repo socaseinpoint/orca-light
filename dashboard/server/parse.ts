@@ -68,6 +68,7 @@ export function parseTrail(block: string): TrailBlock[] {
     const done = join("done");
     blocks.push({
       date: date.trim(),
+      time: "",
       title,
       done,
       why: join("why"),

@@ -97,11 +97,29 @@ function checkAnchors(anchors: Anchor[], repo: string): Anchor[] {
   });
 }
 
+// Committer time (ISO) of a commit, "" if the hash doesn't resolve. Gives Trail
+// blocks a precise wall-clock from their anchor — orca dates blocks by day only.
+function commitTime(hash: string, repo: string): string {
+  try {
+    return execFileSync("git", ["-C", repo, "show", "-s", "--format=%cI", hash], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+  } catch {
+    return "";
+  }
+}
+
 function loadFocus(focusDir: string, repo: string, state: State): Focus | null {
   const md = read(path.join(focusDir, "focus.md"));
   if (!md) return null;
   const p = parseFocus(md);
-  const trail = p.trail.map((b) => ({ ...b, anchors: checkAnchors(b.anchors, repo) }));
+  const trail = p.trail.map((b) => {
+    const anchors = checkAnchors(b.anchors, repo);
+    const firstCommit = anchors.find((a) => a.type === "commit" && a.ok);
+    const time = firstCommit ? commitTime(firstCommit.value, repo) : "";
+    return { ...b, anchors, time };
+  });
   return {
     id: path.basename(focusDir),
     name: p.name,

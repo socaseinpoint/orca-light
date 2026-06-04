@@ -120,6 +120,7 @@ code { font-family: var(--mono); font-size: 0.88em; }
 .tb-body { padding: 0 0 1.6rem 0.6rem; min-width: 0; }
 .tb-head { display: flex; align-items: baseline; gap: 0.7rem; margin-bottom: 0.6rem; }
 .tb-date { font-family: var(--mono); font-size: 0.74rem; color: var(--ink); }
+.tb-time { font-family: var(--mono); font-size: 0.68rem; color: var(--accent); opacity: 0.85; }
 .tb-title { font-size: 0.84rem; color: var(--ink-dim); }
 .tb-layer { display: grid; grid-template-columns: 3.2rem 1fr; gap: 0.6rem; padding: 0.22rem 0; align-items: baseline; }
 .tb-k { font-family: var(--mono); font-size: 0.72rem; }
