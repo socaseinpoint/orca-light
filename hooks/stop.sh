@@ -1,15 +1,12 @@
 #!/usr/bin/env sh
-# Stop — a session must not end on an unverified handoff. Run the gate; if it
-# blocks, return a `block` decision so Claude writes/repairs the handoff before
-# the session ends (this is what makes handoffs hands-free: the human does
-# nothing, the gate forces the agent to leave a verified handoff every session).
-#
-# Self-capping: `orca gate --stop` gives up after N tries (default 3) and lets
-# the session end rather than trapping it forever. SessionStart resets the cap.
+# Stop — fires at the END OF EVERY TURN, and a hard exit (Ctrl-C / kill / crash)
+# bypasses it entirely. So this never blocks: a blocking gate here would nag on
+# every turn yet still miss the kills it was meant to catch. It just WARNS when
+# the freshest active ark's handoff doesn't verify, so a broken or fabricated
+# handoff is visible. Real continuity comes from flushing the handoff as you
+# work (see the SessionStart protocol), not from this hook.
 ORCA="$(CDPATH= cd "$(dirname "$0")/.." 2>/dev/null && pwd)/bin/orca"
 command -v orca >/dev/null 2>&1 && ORCA=orca
-reason="$("$ORCA" gate --stop 2>/dev/null)"
-if [ $? -ne 0 ]; then
-  printf '%s' "$reason" | python3 -c 'import json,sys; print(json.dumps({"decision":"block","reason":sys.stdin.read()}))'
-fi
+out="$("$ORCA" gate 2>/dev/null)"
+[ $? -ne 0 ] && printf 'orca: %s\n' "$out" >&2
 exit 0
