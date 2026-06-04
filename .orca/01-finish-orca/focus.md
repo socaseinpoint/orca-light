@@ -7,13 +7,14 @@ updated: 2026-06-04
 
 ## done-when
 1. all state lives in `<project>/.orca/` — zero global-state writes (nothing under `~/.orca`).
-2. `orca now` from the project shows the in-work focus (`## Сейчас` + open arks), readable in-project.
-3. archiving an ark appends to the focus `## Журнал` — continuation visible, never a void.
+2. `orca now` from the project shows the in-work focus (`## Now` + open arks), readable in-project.
+3. finishing an ark appends to the focus `## Log` — continuation visible, never a void.
 4. orca's command surface has ZERO cross-project concept (no `now --all` / registry / `ark-root`).
 
 ## Now
-Model fully designed and LOCKED this session — decisions in `./decisions.md` (the
-last design call is the two-states-via-folders correction). The model:
+Tooling now MATCHES the model — the `orca` binary + resume skill speak the
+project-local focus-dir model, and all cross-project machinery (registry, `ark-root`,
+`report`, `~/.orca`) is gone. The model (locked in `./decisions.md`):
 
 - **domain** = a folder that holds the orca store (no goal, just a container).
 - **focus** = the atom of orca — a self-contained numbered dir (`NN-name/`: this
@@ -23,16 +24,13 @@ last design call is the two-states-via-folders correction). The model:
 - **side-effects** = the real-world result lives OUTSIDE orca (code repo, Jira, SaaS);
   orca only points at it via `done:` anchors — a domain-agnostic side-effect ledger.
 
-The TOOLING does not match yet — the `orca` binary + resume skill still run the OLD
-global/thread model. This focus dir is the new-model source of truth, written by hand
-to dogfood the format. The first ark builds the tooling to match.
-
-Legacy to migrate (first ark): `.orca/arks/verify-resume.md` (old ark — its deliverable,
-resume continuity, is DONE) and `.orca/decisions.md` (global ledger → should become
-focus-scoped).
+Done-when 1–4 are all met; the legacy ark + global decisions are migrated in. Only
+open thread: the docs (README/GUIDE/PRINCIPLES/spec) still describe the old
+global/thread model — a fresh ark, not on the readiness path.
 
 ## arks
-- `arks/01-collapse-binary.md` — in-work — collapse the binary + skill to git-form.
+- `arks/done/01-collapse-binary.md` — done — collapsed the binary + skill to git-form.
+- `arks/done/00-verify-resume.md` — done — legacy resume-continuity ark, migrated in.
 
 ## Trail
 <!-- handoff trail, append-only, newest LAST -->
@@ -61,6 +59,13 @@ head: Tooling still runs the OLD model, so until the first ark lands, `orca now`
   file (anchor types are format-agnostic). Cross-project overview, when ever wanted, is an
   external add-on that scans `.orca/` files — orca core must never learn about it.
 
+### 2026-06-04 — tooling collapsed to match
+done: Built ark `01-collapse-binary` — rewrote the `orca` binary + resume skill to the project-local focus-dir model and cut every cross-project concept (registry / `ark-root` / `report` / `~/.orca`); migrated the legacy ark + global decisions into this focus; ported the test suite (10/10 green). [commit:d0ff769] [file:bin/orca:831] [test:bash tests/test_done.sh]
+why: One rewrite beat incremental edits — the topology change (threads+registry → focuses) was pervasive. Two calls worth flagging: (1) English section headers (Now/Trail/Log) over the dogfooded Russian, per the all-artifacts-English convention; (2) `orca verify` checks only the LATEST Trail block, because an accumulating trail can't keep historical `file:line` anchors green as files move — commit anchors are immutable and survive, so prefer them for lasting claims.
+next: Done-when 1–4 are met → finish this focus's first deliverables. Remaining: a docs-refresh ark (README/GUIDE/PRINCIPLES/spec still describe the old model). Then the focus itself can go to `.orca/done/`.
+head: This block was written by the same model it describes — `orca verify .orca/01-finish-orca/focus.md` should pass on it (latest-block rule means the older "recovered" block's now-stale `.orca/decisions.md` anchor no longer fails verify). Watch the latest-block verify rule as the Trail grows.
+
 ## Log
 <!-- ark state transitions, append-only -->
 2026-06-04  01-collapse-binary  → in-work  (first ark of the finish-orca focus)
+2026-06-04  01-collapse-binary  → done
