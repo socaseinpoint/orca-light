@@ -33,6 +33,27 @@ orca verify --no-tests # file/commit anchors only
 
 See `spec/handoff.md` for the format.
 
+## Command surface
+
+```
+orca now                  resume view: threads + open arks + where you stopped + staleness
+orca verify [--judge]     check a handoff's anchors against reality (--judge adds a cheap grader)
+orca trail <slug>         one ark's sessions oldest->newest — the chain of thought
+orca archive <slug>       flip an ark to archived (terminal 'done' flag; one writer)
+orca report [--since Nd]  cross-project activity log from dated session blocks
+orca decide "<w> — <why>" append a decision to .orca/decisions.md (the WHY layer)
+orca init · orca gate     scaffold tiers · non-blocking "is the handoff proven?" warn
+```
+
+## Resume (stop doing handoffs by hand)
+
+The `orca-resume` skill (`skills/orca-resume/`) reconstructs continuity you didn't
+write down. On sit-down it shows open arks and forks (continue / archive+new / new);
+on *continue* it dispatches a subagent that reads the **prior session transcript** +
+git log and compresses them into one verified 4-layer block (`done` with anchors /
+`why` / `next` / `head`), appends it to the ark, and runs `orca verify`. The
+transcript never enters the main context window. See `spec/resume.md`.
+
 ## Topology
 
 | Tier | Path | Holds |
