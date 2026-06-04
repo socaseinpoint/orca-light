@@ -233,6 +233,28 @@
     </div>
   </section>
 
+  <!-- TOOLING (optional companion) -->
+  <section id="tooling">
+    <div class="wrap block">
+      <div class="head reveal">
+        <div class="num">§ 07</div>
+        <div>
+          <h2><span data-l="ru">Компаньон: дашборд.</span><span data-l="en">Companion: the dashboard.</span></h2>
+          <div class="sub"><span data-l="ru">Внешний read-only вид. Кор о нём не знает — и не должен.</span><span data-l="en">An external read-only view. Core never learns of it — by design.</span></div>
+        </div>
+      </div>
+      <div class="body-grid reveal">
+        <div></div>
+        <div>
+          <p class="prose"><span data-l="ru">Кор остаётся минимальным — никакого cross-project, реестра, UI. Но если хочется <em>видеть</em> всю картину сразу, рядом лежит <b>дашборд</b>: локальный реактивный вид, который сканит <code>.orca/</code> по проектам и рисует карту (проекты → focus'ы → арки), таймлайн сессии (Trail + якоря) и реестр <b>side-effects</b> — все результаты вовне, включая похороненные в закрытых арках.</span><span data-l="en">Core stays minimal — no cross-project, no registry, no UI. But when you want to <em>see</em> the whole picture at once, a <b>dashboard</b> sits alongside: a local reactive view that scans <code>.orca/</code> across projects and draws the map (projects → focuses → arks), the session timeline (Trail + anchors), and the <b>side-effects</b> index — every outcome outside orca, including the ones buried in closed arks.</span></p>
+          <p class="prose dim"><span data-l="ru">Это и есть тот внешний add-on, который кор намеренно не растит: одна команда, реактивно через SSE, <b>только читает</b> <code>.orca/</code> — ничего не пишет, никаких <code>test:</code>-якорей не исполняет. Снёс папку <code>dashboard/</code> — orca работает ровно так же.</span><span data-l="en">This is exactly the external add-on core deliberately never grows: one command, reactive over SSE, <b>read-only</b> on <code>.orca/</code> — it writes nothing and never executes a <code>test:</code> anchor. Delete the <code>dashboard/</code> folder and orca works identically.</span></p>
+<pre>cd orca-light/dashboard
+npm install &amp;&amp; npm run dev    <span class="c"># local viewer · reads .orca/, writes nothing</span></pre>
+        </div>
+      </div>
+    </div>
+  </section>
+
   <!-- CLOSER -->
   <section>
     <div class="wrap closer reveal">

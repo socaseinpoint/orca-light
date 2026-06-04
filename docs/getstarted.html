@@ -151,6 +151,31 @@ orca done login-bug  <span class="c"># move it to done/</span></pre>
     </div>
   </section>
 
+  <!-- OPTIONAL: DASHBOARD -->
+  <section id="dashboard">
+    <div class="wrap block">
+      <div class="head reveal">
+        <div class="num">§ 03</div>
+        <div>
+          <h2><span data-l="ru">Опционально: дашборд</span><span data-l="en">Optional: the dashboard</span></h2>
+          <div class="sub"><span data-l="ru">Локальный read-only вид всей картины. Не нужен для работы — кор это просто файлы.</span><span data-l="en">A local read-only view of the whole picture. Not required — core is just files.</span></div>
+        </div>
+      </div>
+      <div class="body-grid">
+        <div></div>
+        <div class="gs reveal">
+          <div class="gs-step">
+            <div class="gh"><span class="gn">↗</span><h3><span data-l="ru">Запусти рядом с кором</span><span data-l="en">Run it alongside the core</span></h3></div>
+            <div class="gd"><span data-l="ru">Сканит <code>.orca/</code> по проектам, рисует карту, таймлайн сессии и реестр <b>side-effects</b>. Реактивно через SSE. <b>Только читает</b> — ничего не пишет, <code>test:</code>-якоря не исполняет. Корень сканирования — <code>ORCA_SCAN_ROOT</code>.</span><span data-l="en">Scans <code>.orca/</code> across projects, draws the map, the session timeline, and the <b>side-effects</b> index. Reactive over SSE. <b>Read-only</b> — writes nothing, never runs a <code>test:</code> anchor. Scan root via <code>ORCA_SCAN_ROOT</code>.</span></div>
+<pre>cd orca-light/dashboard
+npm install
+npm run dev          <span class="c"># open the printed localhost URL</span></pre>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
   <!-- CLOSER -->
   <section>
     <div class="wrap closer reveal">
