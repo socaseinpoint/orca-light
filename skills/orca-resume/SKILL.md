@@ -124,19 +124,30 @@ tokens. Resolve these first and bake them into the prompt:
   ```bash
   ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
   ```
-- **Transcript dir** — Claude Code stores per-project transcripts at
-  `~/.claude/projects/<slug>/`, where `<slug>` is the **project root's** absolute
-  path with every `/` (and `.`) replaced by `-`. Mangle `$ROOT`:
+- **Prior sessions to compress — ASK THE LEDGER, don't guess.** The SessionStart
+  hook records each session's EXACT transcript path + cwd at `.orca/sessions/<id>.json`.
+  Resume reads that instead of mangling paths by hand:
   ```bash
-  TRANSCRIPT_DIR="$HOME/.claude/projects/$(printf '%s' "$ROOT" | sed 's/[/.]/-/g')"
+  orca session pending
   ```
-  The transcripts are `*.jsonl` there, newest by mtime. The **current** session is
-  the freshest file (being written now); the **prior** session is the next-freshest.
-  > Caveat: this finds the prior transcript only if that prior work was itself
-  > launched from `$ROOT`. Claude Code keys transcripts by launch dir, so the robust
-  > habit (and what to tell the user) is: **launch Claude Code from the project
-  > directory** so transcripts and the focus share one locality. Nothing can
-  > retroactively relocate a prior session whose transcript was written elsewhere.
+  Output is TSV, oldest first:
+  ```
+  pending  <id>  <transcript-path>  <cwd>     # SAFE to compress — fold each, oldest first
+  live     <id>  <transcript-path>  <reason>  # a concurrent session is still in-progress
+  ```
+  `pending` already EXCLUDES the current session, anything LIVE (a parallel session
+  whose transcript was touched seconds ago — compressing it would silently corrupt
+  continuity), already-folded sessions, and other projects. This is the MUST-tier
+  fix: **compress the SET** — one Trail block per `pending` row. For each `live` row,
+  REFUSE: say one line ("session `<id>` looks in-progress — skipped; re-run resume
+  once it's idle") and move on. Zero pending rows and no prior anchor gap → nothing to
+  fold, append NO block (never confabulate).
+  > Fallback (pre-ledger sessions, before the hook was installed): if `session pending`
+  > is empty yet `orca now` clearly shows uncompressed work, derive the dir by hand —
+  > `~/.claude/projects/<slug>`, `<slug>` = `$ROOT` with every `/` and `.` → `-`
+  > (`printf '%s' "$ROOT" | sed 's/[/.]/-/g'`); prior = next-freshest `*.jsonl` after
+  > the current one. Launch Claude Code from the project dir so transcripts and the
+  > focus share one locality.
 - **In-work focus file** — the focus you're continuing: `.orca/<NN-name>/focus.md`
   (the freshest in-work one from `orca now`, or the slug argument).
 - **Last anchored commit** — the newest `[commit:HASH]` in that focus's freshest
@@ -150,8 +161,7 @@ You are compressing one prior coding session into a single orca Trail block.
 DO NOT return the transcript or large excerpts — return ONLY the block below.
 
 Project root: {ROOT}
-Prior transcript: the newest *.jsonl in {TRANSCRIPT_DIR} EXCLUDING the current
-  session file {CURRENT_JSONL} (it's the one still being written). Pick by mtime.
+Prior transcript: {TRANSCRIPT}  (the exact path from `orca session pending`)
 Work since last handoff: run `git -C {ROOT} log --oneline {LAST_HASH}..HEAD`
   and `git -C {ROOT} log -p {LAST_HASH}..HEAD` to see real commits.
 
@@ -177,8 +187,9 @@ focus's decisions.md, append one line of `orca decide "<decision> — <why>"` te
 as a P.S. so the human can log it.
 ```
 
-The subagent returns the block (and maybe a decision suggestion). It does not
-write files — **you** do.
+Dispatch one subagent **per `pending` transcript**, oldest first; each returns one
+Trail block. The subagent returns the block (and maybe a decision suggestion). It
+does not write files — **you** do.
 
 ## Step 3 — append + verify (the only write)
 
@@ -197,6 +208,15 @@ move; commit anchors are immutable and stay green forever, so prefer them for cl
 you want to last.) On PASS, say nothing but a quiet ✓ — do NOT paste the green anchor
 list (plumbing). If verify FAILs, the block over-claimed — fix the `done:` line
 (weaken the claim or correct the anchor) and re-verify. Never ship a red block.
+
+**Mark each folded transcript** so it never double-compresses (the SET converges —
+a later resume won't re-fold it):
+
+```bash
+orca session compressed <id>   # the <id> from the `pending` row you just folded
+```
+
+Do this once per `pending` row, after its block is appended and verified.
 
 **Then self-clean the tree** (presentation contract): the append you just made — plus
 any orca-created bookkeeping already dirty — gets committed quietly with explicit

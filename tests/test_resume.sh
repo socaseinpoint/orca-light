@@ -51,6 +51,14 @@ want="-Users-me-Documents-projects-orca-light"
 got2="$(derive /Users/me/.config/foo)"
 [ "$got2" = "-Users-me--config-foo" ] && { echo "  ok   — dotted path segment handled"; pass=$((pass+1)); } || { echo "  FAIL — dotted derive: got '$got2'"; fail=$((fail+1)); }
 
+# (e') MUST-tier: resume consumes the session-context ledger (live-aware, set-based)
+has "orca session pending" "reads the session ledger for safe-to-compress transcripts"
+has "orca session compressed" "marks each folded transcript so it never double-compresses"
+grep -qiF "live" "$SKILL" && { echo "  ok   — handles live/in-progress transcripts"; pass=$((pass+1)); } || { echo "  FAIL — no live handling"; fail=$((fail+1)); }
+for c in session; do
+  "$ORCA" --help 2>&1 | grep -qw "$c" && { echo "  ok   — binary has '$c'"; pass=$((pass+1)); } || { echo "  FAIL — binary lacks '$c'"; fail=$((fail+1)); }
+done
+
 # (e) core flow: subagent reads PRIOR transcript, returns one 4-layer block, appended to
 #     the focus's ## Trail + verified
 has "transcript" "dispatches over the prior transcript"

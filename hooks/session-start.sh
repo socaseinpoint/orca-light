@@ -4,6 +4,13 @@
 # the session maintains continuity without being asked. Read-only, never blocks.
 ORCA="$(CDPATH= cd "$(dirname "$0")/.." 2>/dev/null && pwd)/bin/orca"
 command -v orca >/dev/null 2>&1 && ORCA=orca
+
+# Record this session's context (id + exact transcript path + cwd) from the hook
+# JSON on stdin — the MUST-tier fact that makes resume live-aware, set-based, and
+# correctly attributed. Read stdin ONCE; the rest of the hook needs no input.
+_in="$(cat 2>/dev/null || true)"
+printf '%s' "$_in" | "$ORCA" session record >/dev/null 2>&1 || true
+
 "$ORCA" now 2>/dev/null || true
 
 # Inject the protocol only when this project actually uses orca (.orca present).

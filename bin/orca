@@ -44,9 +44,18 @@ Usage:
   orca trail <slug>              one focus's (or ark's) Trail, oldest->newest
   orca done <slug>               finish an ark (-> arks/done/ + Log line) or a focus (-> .orca/done/)
   orca gate                      warn (exit 1) if the freshest focus's latest Trail block isn't verified
+  orca session record|pending|compressed   session-context ledger (makes resume live-aware)
+
+The session ledger (the MUST-tier correctness layer): the SessionStart hook records
+each session's id + EXACT transcript path + cwd under .orca/sessions/ (ephemeral,
+gitignored). `orca session pending` then tells resume which prior transcripts are
+SAFE to compress — excluding the current session, any LIVE concurrent one, already
+-folded sessions, and other projects — so resume folds the SET exactly once, never
+partially compresses a live transcript, and finds transcripts without guessing paths.
 """
 import argparse
 import glob
+import json
 import os
 import re
 import subprocess
@@ -785,6 +794,143 @@ def cmd_done(args):
     return 2
 
 
+# --- session-context ledger: the MUST layer that makes resume live-aware ---
+#
+# One fact recorded at SessionStart closes three holes at once (decision #19):
+#   (1) live-detection  — a transcript still being written must NOT be compressed
+#       (parallel different-ark sessions → silent partial/double folding = corruption);
+#   (2) set-compression — resume folds EVERY uncompressed prior session, not just one
+#       (the `compressed` flag makes "already folded" deterministic, not an mtime guess);
+#   (3) attribution + dir — the EXACT transcript path is recorded, so resume never has
+#       to mangle the launch dir to find it, and cwd attributes the session to a project.
+# Records live in <project>/.orca/sessions/<id>.json — project-local, ephemeral
+# (gitignored). Written at SessionStart (a fact, not background — #19); never at Stop
+# (Stop fires every turn, so it can't mean "ended"). Liveness is read from the
+# transcript's mtime, which Claude Code advances every turn — the heartbeat for free.
+
+LIVE_WINDOW = int(os.environ.get("ORCA_LIVE_WINDOW", "45"))  # seconds; transcript idle
+                                                             # longer than this = safe
+
+
+def sessions_dir(root):
+    return os.path.join(root, ".orca", "sessions")
+
+
+def _read_json(path):
+    try:
+        with open(path) as fh:
+            return json.load(fh)
+    except (OSError, ValueError):
+        return None
+
+
+def _session_record(args):
+    """Write/merge this session's record from the Claude Code hook JSON on stdin.
+    Never breaks the hook: missing fields or bad JSON just exits 0 silently."""
+    raw = ""
+    try:
+        if not sys.stdin.isatty():
+            raw = sys.stdin.read()
+    except (OSError, ValueError):
+        raw = ""
+    try:
+        data = json.loads(raw) if raw.strip() else {}
+    except ValueError:
+        data = {}
+    sid = data.get("session_id") or data.get("session") or os.environ.get("CLAUDE_SESSION_ID")
+    transcript = data.get("transcript_path") or data.get("transcript")
+    cwd = data.get("cwd") or os.getcwd()
+    if not sid:
+        return 0  # nothing to record — do not break the hook
+    root = find_repo_root(cwd)
+    if not os.path.isdir(os.path.join(root, ".orca")):
+        return 0  # not an orca project — nothing to do
+    sdir = sessions_dir(root)
+    os.makedirs(sdir, exist_ok=True)
+    path = os.path.join(sdir, sid + ".json")
+    rec = _read_json(path) or {}
+    rec.update({
+        "session": sid,
+        "transcript": transcript or rec.get("transcript"),
+        "cwd": os.path.realpath(cwd),
+        "started": rec.get("started") or int(time.time()),
+    })
+    rec.setdefault("compressed", False)
+    with open(path, "w") as fh:
+        json.dump(rec, fh)
+    return 0
+
+
+def _session_pending(args):
+    """Print prior sessions safe to compress, oldest first. Excludes: the CURRENT
+    session (freshest transcript mtime — being written now), LIVE ones (transcript
+    touched within LIVE_WINDOW), already-compressed, and other projects (cwd).
+    Output is TSV the resume skill consumes:
+        pending\t<id>\t<transcript-path>\t<cwd>
+        live\t<id>\t<transcript-path>\t<reason>
+    (live rows are warnings — resume skips them loudly rather than risk corruption.)"""
+    root = find_repo_root(os.getcwd())
+    sdir = sessions_dir(root)
+    if not os.path.isdir(sdir):
+        return 0
+    existing = []
+    for f in glob.glob(os.path.join(sdir, "*.json")):
+        r = _read_json(f)
+        t = r.get("transcript") if r else None
+        if r and t and os.path.isfile(t):
+            existing.append((r, os.path.getmtime(t)))
+    if not existing:
+        return 0
+    existing.sort(key=lambda x: x[1])         # oldest first
+    current_id = existing[-1][0]["session"]    # freshest = this session, being written
+    now = time.time()
+    root_real = os.path.realpath(root)
+    pend, live = [], []
+    for r, mt in existing:
+        if r["session"] == current_id or r.get("compressed"):
+            continue
+        if os.path.realpath(find_repo_root(r.get("cwd") or root)) != root_real:
+            continue  # belongs to another project
+        if now - mt < LIVE_WINDOW:
+            live.append((r, mt))
+        else:
+            pend.append((r, mt))
+    for r, mt in pend:
+        print("pending\t%s\t%s\t%s" % (r["session"], r["transcript"], r.get("cwd", "")))
+    for r, mt in live:
+        print("live\t%s\t%s\ttranscript touched %ds ago (< %ds) — possibly in-progress; skipped"
+              % (r["session"], r["transcript"], int(now - mt), LIVE_WINDOW))
+    return 0
+
+
+def _session_mark(args):
+    """Mark a session's transcript as folded into a Trail block (so it is never
+    double-compressed). Idempotent."""
+    root = find_repo_root(os.getcwd())
+    path = os.path.join(sessions_dir(root), args.id + ".json")
+    rec = _read_json(path)
+    if not rec:
+        sys.stderr.write("session: no record for %s\n" % args.id)
+        return 2
+    rec["compressed"] = True
+    with open(path, "w") as fh:
+        json.dump(rec, fh)
+    print(_c(GREEN, "marked compressed: ") + args.id)
+    return 0
+
+
+def cmd_session(args):
+    action = getattr(args, "action", None)
+    if action == "record":
+        return _session_record(args)
+    if action == "pending":
+        return _session_pending(args)
+    if action == "compressed":
+        return _session_mark(args)
+    sys.stderr.write("session: use record | pending | compressed <id>\n")
+    return 2
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(prog="orca", description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -819,6 +965,14 @@ def main(argv=None):
     g = sub.add_parser("gate", help="exit 1 + reason if the freshest focus's latest Trail block isn't verified")
     g.add_argument("--timeout", type=int, default=120, help="per-test timeout seconds")
     g.set_defaults(func=cmd_gate)
+
+    se = sub.add_parser("session", help="session-context ledger (makes resume live-aware): record | pending | compressed")
+    se_sub = se.add_subparsers(dest="action")
+    se_sub.add_parser("record", help="record this session from the Claude Code hook JSON on stdin (SessionStart)")
+    se_sub.add_parser("pending", help="list prior sessions safe to compress (excludes current + live + already-folded + other projects)")
+    se_c = se_sub.add_parser("compressed", help="mark a session's transcript as folded into a Trail block")
+    se_c.add_argument("id", help="session id")
+    se.set_defaults(func=cmd_session)
 
     args = p.parse_args(argv)
     if not getattr(args, "func", None):

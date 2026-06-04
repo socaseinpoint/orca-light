@@ -1,3 +1,6 @@
 __pycache__/
 *.pyc
 .DS_Store
+
+# session-context ledger — ephemeral, per-machine (transcripts are local); not history
+.orca/sessions/

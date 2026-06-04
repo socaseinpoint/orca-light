@@ -89,22 +89,28 @@ and wait — a hook cannot.
 2. **List the in-work focuses.** `orca now` lists the in-work focuses in **this
    repo** — project-local, no cross-project roll-up, no ark-root. Auto-pick when
    exactly one focus is in work; only ask (AskUserQuestion) when genuinely ambiguous.
-3. **Resolve project root and transcript dir.** Project root is the repo you're in:
-   `ROOT="$(git rev-parse --show-toplevel || pwd)"`. The transcript dir is
-   `~/.claude/projects/<slug>`, where `<slug>` = `ROOT` with every `/` and `.`
-   replaced by `-` (Claude Code keys transcripts by launch dir — so launch from the
-   project dir as a habit). The prior transcript is the next-freshest `*.jsonl`
-   after the current one.
-4. **Dispatch a subagent** (the large transcript must **never** enter the main
-   context window). It reads the prior transcript plus
+3. **Ask the session ledger which transcripts are safe** (the MUST-tier layer —
+   §"Live-aware, set-based" below). `orca session pending` returns, oldest first,
+   the prior transcripts SAFE to compress (`pending` rows with the EXACT path) and
+   any concurrent in-progress ones to skip (`live` rows). It excludes the current
+   session, live sessions, already-folded ones, and other projects — so resume
+   never guesses a path, never partially compresses a live transcript, and folds
+   the **set** exactly once. (Fallback for pre-ledger sessions: derive the dir as
+   `~/.claude/projects/<slug>`, `<slug>` = `ROOT` with every `/` and `.` → `-`;
+   prior = next-freshest `*.jsonl`. Launch from the project dir as a habit, since
+   Claude Code keys transcripts by launch dir.)
+4. **Dispatch a subagent per pending transcript** (the large transcript must
+   **never** enter the main context window). Each reads its transcript plus
    `git log <LAST_ANCHORED_HASH>..HEAD` and returns **one** markdown block:
    `done:` with anchors derived from real commits/files, plus `why/next/head`
-   narrative. It returns ~200 tokens, not the transcript.
-5. **Append and verify.** Append the block at the BOTTOM of the in-work focus's
-   `## Trail` (append-only, newest last). Then
+   narrative. It returns ~200 tokens, not the transcript. For each `live` row,
+   REFUSE — say so in one line and skip; never compress an in-progress transcript.
+5. **Append, verify, mark folded.** Append each block at the BOTTOM of the in-work
+   focus's `## Trail` (append-only, newest last). Then
    `orca verify .orca/<NN-name>/focus.md` — it checks only the **latest** Trail
    block (commit anchors are immutable; historical `file:line` anchors may rot as
-   files move). PASS → quiet ✓. FAIL → fix the `done:` line and re-verify.
+   files move). PASS → quiet ✓. FAIL → fix the `done:` line and re-verify. After a
+   transcript's block lands, `orca session compressed <id>` so it never double-folds.
 6. **Self-clean and re-orient.** Self-clean only orca-created git noise (your
    focus/decisions appends) with explicit pathspecs. Then lead the user with a
    one-screen re-orientation: problem → done → changed → next → fork (where each
@@ -115,6 +121,38 @@ the prior session ended (Ctrl-C / crash bypass no hook), and the compress reads
 *that*, not a flush someone had to remember to write. Transcripts are keyed by
 launch dir, so resuming from the project dir keeps the right transcript local to
 the right project.
+
+## Live-aware, set-based (the session-context ledger)
+
+Sequential single-session resume has two silent failure modes, and they are the
+**same** defect: resume used to pick "the next-freshest `*.jsonl` by mtime" and
+record nothing about what it already folded, so the boundary was *guessed*.
+
+- **Loss edge** — two real sessions happen before a resume; only the freshest is
+  compressed, the buried one's narrative is never folded.
+- **Dup edge** — a session that stays freshest gets compressed twice (a second
+  Trail block for the same work).
+- **Corruption edge** — a *parallel* session on a different ark is still being
+  written; grabbing its in-progress transcript by mtime folds a half-finished
+  session, silently.
+
+One small fact closes all three: **record session context at SessionStart**
+(`.orca/sessions/<id>.json` — session id, exact transcript path, cwd; ephemeral,
+gitignored; a recorded fact, not a background process). Then `orca session pending`
+derives, on read:
+
+- the **current** session (freshest transcript mtime) → excluded;
+- any **live** session (transcript touched within a short window) → reported as a
+  `live` row and skipped, never compressed partially (loud, not silent);
+- **already-folded** sessions (`compressed` flag, set by `orca session compressed
+  <id>` after a block lands) → excluded, so the set converges and nothing double-folds;
+- sessions from **other projects** (cwd attribution) → excluded.
+
+What remains is the exact set of prior transcripts to fold, oldest first, with their
+real paths — so resume compresses the **set** exactly once and never has to mangle a
+launch dir to find a file. The only heuristic left is liveness (transcript mtime);
+everything load-bearing (which set, which path, which project, folded-or-not) is
+deterministic.
 
 ## verify change
 
